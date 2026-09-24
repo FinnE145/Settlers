@@ -64,7 +64,7 @@ def test_generated_board_is_valid(seed, topo):
     assert sorted(numbers) == sorted(NUMBER_TOKENS)
     for h, n in enumerate(board.numbers):
         if n is not None:
-            assert board.terrain[h] not in (SEA, LAKE, "desert")
+            assert board.terrain[h] not in (SEA, LAKE)
 
     lake = board.lake_hex
     land = [n for n in topo.hexes[lake].neighbours if board.terrain[n] != SEA]

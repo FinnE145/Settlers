@@ -12,29 +12,28 @@ TERRAIN_RESOURCE = {
 }
 SEA = "sea"
 GOLD = "gold"
-DESERT = "desert"
 LAKE = "lake"
 
 BOARD_COLS = 7
 BOARD_ROWS = 7
 
-# Seafarers + base game tile set, with the lake replacing one of the three deserts.
+# Seafarers + base game tile set, with the three deserts replaced by the lake,
+# a third gold field and one more sea.
 TILE_COUNTS = {
-    SEA: 19,
+    SEA: 20,
     "forest": 5,
     "hills": 5,
     "pasture": 5,
     "fields": 5,
     "mountains": 5,
-    GOLD: 2,
-    DESERT: 2,
+    GOLD: 3,
     LAKE: 1,
 }
 
-# One number token per producing land hex (5 of each resource + 2 gold = 27).
+# One number token per producing land hex (5 of each resource + 3 gold = 28).
 NUMBER_TOKENS = (
     [2] * 2 + [3] * 3 + [4] * 3 + [5] * 3 + [6] * 3
-    + [8] * 3 + [9] * 3 + [10] * 3 + [11] * 3 + [12] * 1
+    + [8] * 3 + [9] * 3 + [10] * 3 + [11] * 3 + [12] * 2
 )
 LAKE_NUMBERS = (2, 3, 11, 12)
 LAKE_MIN_LAND_NEIGHBOURS = 3

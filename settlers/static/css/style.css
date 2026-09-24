@@ -12,10 +12,9 @@
   --forest: #2e7d32;
   --hills: #c8643b;
   --pasture: #8bc34a;
-  --fields: #ecd28f;
+  --fields: #f4d03f;
   --mountains: #8e8e8e;
-  --gold: #f7b500;
-  --desert: #e6d3a3;
+  --gold: #dcc38e;
   --fishwater: #a9dcf5;
 }
 
@@ -71,18 +70,16 @@ svg.board { width: 100%; height: auto; display: block; }
 .t-fields { fill: var(--fields); }
 .t-mountains { fill: var(--mountains); }
 .t-gold { fill: var(--gold); }
-.t-desert { fill: var(--desert); }
 .t-lake { fill: var(--fishwater); }
 .t-sea { fill: var(--sea); stroke: #2f6aa5; }
 
 .p-forest { fill: #1b5e20; }
 .p-pasture { fill: #f1f8e9; }
-.p-fields { stroke: #c9a24a; stroke-width: 2; }
+.p-fields { stroke: #c9a227; stroke-width: 2; }
 .p-hills { stroke: #97472a; stroke-width: 1; fill: none; }
 .p-mountains { fill: #6a6a6a; }
 .p-snow { fill: #fafafa; }
-.p-gold { fill: #fff6c2; }
-.p-desert { fill: #c2a867; }
+.p-gold { fill: #fff8e1; stroke: #a8894c; stroke-width: 0.8; }
 .p-sea { stroke: #5a95d0; stroke-width: 1; fill: none; }
 .p-fish { fill: #1d5f99; opacity: 0.55; }
 
@@ -106,7 +103,7 @@ svg.board { width: 100%; height: auto; display: block; }
 .harbour-ring.t-forest { stroke: var(--forest); fill: #fff; }
 .harbour-ring.t-hills { stroke: var(--hills); fill: #fff; }
 .harbour-ring.t-pasture { stroke: var(--pasture); fill: #fff; }
-.harbour-ring.t-fields { stroke: #c9a24a; fill: #fff; }
+.harbour-ring.t-fields { stroke: #d4ac0d; fill: #fff; }
 .harbour-ring.t-mountains { stroke: var(--mountains); fill: #fff; }
 .harbour-text {
   font-size: 9px; font-weight: 700; fill: #222;

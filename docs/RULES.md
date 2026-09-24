@@ -12,11 +12,11 @@ Seafarers ship rules and the Fishermen fish rules, with the house rules below.
 ## Board
 
 - A 7×7 rectangle of pointy-top hexes (odd rows offset), surrounded by a sea frame.
-- Tiles: 19 sea, 5 each of forest, hills, pasture, fields and mountains, 2 gold fields,
-  2 deserts and 1 lake.
+- Tiles: 20 sea, 5 each of forest, hills, pasture, fields and mountains, 3 gold fields
+  and 1 lake. There are no deserts.
 - Placement is fully random. The only constraint is that the lake touches at least
   3 land hexes (any non-sea hex counts as land).
-- Number tokens on the 27 producing hexes: 2×2, 3× each of 3, 4, 5, 6, 8, 9, 10, 11 and 1×12.
+- Number tokens on the 28 producing hexes: 2×2, 3× each of 3, 4, 5, 6, 8, 9, 10, 11 and 2×12.
   The lake produces on 2, 3, 11 and 12.
 - 10 harbours on random land/sea edges: five 3:1 and one 2:1 per resource. No two harbours
   share a corner.

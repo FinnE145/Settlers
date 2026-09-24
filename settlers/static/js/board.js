@@ -19,7 +19,6 @@ export const TERRAIN = {
   fields: { label: 'Fields', pattern: 'pat-fields' },
   mountains: { label: 'Mountains', pattern: 'pat-mountains' },
   gold: { label: 'Gold field', pattern: 'pat-gold' },
-  desert: { label: 'Desert', pattern: 'pat-desert' },
   lake: { label: 'Lake', pattern: 'pat-fishery' },
   sea: { label: 'Sea', pattern: 'pat-sea' },
 };
@@ -61,10 +60,6 @@ function Patterns() {
     </pattern>
     <pattern id="pat-gold" width="14" height="14" patternUnits="userSpaceOnUse">
       <polygon points="7,3 10,7 7,11 4,7" class="p-gold" />
-    </pattern>
-    <pattern id="pat-desert" width="12" height="12" patternUnits="userSpaceOnUse">
-      <circle cx="3" cy="3" r="1" class="p-desert" />
-      <circle cx="9" cy="9" r="1" class="p-desert" />
     </pattern>
     <pattern id="pat-sea" width="24" height="16" patternUnits="userSpaceOnUse">
       <path d="M0 8 Q6 5 12 8 T24 8" class="p-sea" />
