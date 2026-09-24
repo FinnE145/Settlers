@@ -47,6 +47,17 @@ FISHERY_NUMBERS = (4, 5, 6, 8, 9, 10)
 FISH_TOKENS = [1] * 11 + [2] * 10 + [3] * 8
 BOOT = 0
 
+# What each fish purchase costs.
+FISH_PRICES = {
+    "bank": 1,  # take everything out of your card bank
+    "remove_robber": 2,
+    "remove_pirate": 2,
+    "steal": 3,  # a random card from the opponent's hand
+    "resource": 4,  # one resource card of your choice
+    "route": 5,  # a free road or ship
+    "dev_card": 7,
+}
+
 DEV_CARDS = {
     "knight": 14,
     "victory_point": 5,
@@ -54,6 +65,15 @@ DEV_CARDS = {
     "year_of_plenty": 2,
     "monopoly": 2,
 }
+
+DEV_NAMES = {
+    "knight": "a knight",
+    "victory_point": "a victory point",
+    "road_building": "road building",
+    "year_of_plenty": "year of plenty",
+    "monopoly": "monopoly",
+}
+PLAYABLE_DEV = ("knight", "road_building", "year_of_plenty", "monopoly")
 
 COSTS = {
     "road": {"wood": 1, "brick": 1},

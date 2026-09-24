@@ -10,6 +10,7 @@ whole state as JSON-compatible data.
 from __future__ import annotations
 
 import random
+from collections import Counter
 
 from .board import Board
 from .constants import (
@@ -17,12 +18,15 @@ from .constants import (
     CITY_LIMIT,
     COSTS,
     DEV_CARDS,
+    DEV_NAMES,
+    FISH_PRICES,
     FISH_TOKENS,
     GOLD,
     LAKE,
     LAKE_NUMBERS,
     LARGEST_ARMY_MIN,
     LONGEST_ROUTE_MIN,
+    PLAYABLE_DEV,
     PLAYER_COLOURS,
     RESOURCES,
     SETTLEMENT_LIMIT,
@@ -453,6 +457,8 @@ class Game:
     ACTIONS = (
         "build_settlement", "build_city", "build_road", "build_ship",
         "roll", "end_turn", "choose_gold", "discard", "move_robber",
+        "maritime", "offer_trade", "accept_trade", "decline_trade", "cancel_trade",
+        "buy_dev", "play_dev", "skip_free_routes", "fish", "deposit", "pass_boot", "move_ship",
     )
 
     def act(self, p: int, action: dict) -> None:
@@ -662,6 +668,329 @@ class Game:
         pool = [r for r, n in hand.items() for _ in range(n)]
         return self.rng.choice(pool)
 
+    # --- trading with the bank and harbours
+
+    def _harbour_holdings(self, p: int) -> tuple[bool, set, set]:
+        """(on a 3:1 harbour, resources of 2:1 harbours p is on, those p is on with a city)"""
+        generic, two, city = False, set(), set()
+        for h in self.board.harbours:
+            for v in self.topo.edges[h["edge"]].vertices:
+                b = self.buildings.get(v)
+                if b is None or b["owner"] != p:
+                    continue
+                if h["kind"] == "3:1":
+                    generic = True
+                else:
+                    two.add(h["kind"])
+                    if b["kind"] == "city":
+                        city.add(h["kind"])
+        return generic, two, city
+
+    def trade_rates(self, p: int) -> dict:
+        """How many of ``give`` it costs p to get one ``get`` from the supply."""
+        generic, two, city = self._harbour_holdings(p)
+        rates = {}
+        for give in RESOURCES:
+            rates[give] = {}
+            for get in RESOURCES:
+                if give == get:
+                    continue
+                rate = 3 if generic else 4
+                if give in two or get in two:  # 2:1 harbours work both ways
+                    rate = 2
+                if give in city and get in city:  # cities on two 2:1 harbours: 1:1 between them
+                    rate = 1
+                rates[give][get] = rate
+        return rates
+
+    def _act_maritime(self, p: int, a: dict) -> None:
+        self._require_main_phase(p)
+        give, get = a.get("give"), a.get("get")
+        self._require(give in RESOURCES and get in RESOURCES and give != get,
+                      "Pick two different resources.")
+        rate = self.trade_rates(p)[give][get]
+        self._pay(p, {give: rate})
+        self.players[p]["hand"][get] += 1
+        self._log(f"{self._name(p)} trades {rate} {give} for 1 {get}.")
+
+    # --- trading between players
+
+    @staticmethod
+    def _clean_fish(value) -> list[int]:
+        if value is None:
+            return []
+        if not isinstance(value, list) or not all(
+            isinstance(t, int) and not isinstance(t, bool) and t in (1, 2, 3) for t in value
+        ):
+            raise RuleError("Invalid fish tokens.")
+        return sorted(value)
+
+    def _has_fish(self, p: int, tokens: list[int]) -> bool:
+        return not (Counter(tokens) - Counter(self.players[p]["fish"]))
+
+    def _take_fish(self, p: int, tokens: list[int]) -> None:
+        for t in tokens:
+            self.players[p]["fish"].remove(t)
+
+    def _has_cards(self, p: int, cards: dict) -> bool:
+        hand = self.players[p]["hand"]
+        return all(hand[r] >= n for r, n in cards.items())
+
+    def _require_trade_window(self) -> None:
+        self._require(self.phase == "play", "The game isn't in progress.")
+        self._require(self.rolled and not self.pending, "Trading happens after the roll.")
+
+    def _describe_side(self, cards: dict, fish: list[int]) -> str:
+        parts = [self._describe(cards)] if _count(cards) else []
+        if fish:
+            parts.append("fish " + "+".join(str(t) for t in fish))
+        return " and ".join(parts) if parts else "nothing"
+
+    def _act_offer_trade(self, p: int, a: dict) -> None:
+        self._require_trade_window()
+        give, get = _clean_cards(a.get("give", {})), _clean_cards(a.get("get", {}))
+        give_fish, get_fish = self._clean_fish(a.get("give_fish")), self._clean_fish(a.get("get_fish"))
+        self._require((_count(give) or give_fish) and (_count(get) or get_fish),
+                      "Both sides of a trade need something.")
+        self._require(self._has_cards(p, give), "You don't have those cards.")
+        self._require(self._has_fish(p, give_fish), "You don't have those fish tokens.")
+        self.trade = {"from": p, "give": give, "get": get, "give_fish": give_fish, "get_fish": get_fish}
+        self._log(f"{self._name(p)} offers {self._describe_side(give, give_fish)} "
+                  f"for {self._describe_side(get, get_fish)}.")
+
+    def _act_accept_trade(self, p: int, a: dict) -> None:
+        t = self.trade
+        self._require(t is not None and t["from"] != p, "There's no offer to accept.")
+        self._require_trade_window()
+        o = t["from"]
+        self._require(self._has_cards(o, t["give"]) and self._has_fish(o, t["give_fish"]),
+                      f"{self._name(o)} no longer has what they offered.")
+        self._require(self._has_cards(p, t["get"]), "You don't have the cards they asked for.")
+        self._require(self._has_fish(p, t["get_fish"]), "You don't have the fish tokens they asked for.")
+        for r in RESOURCES:
+            self.players[o]["hand"][r] += t["get"][r] - t["give"][r]
+            self.players[p]["hand"][r] += t["give"][r] - t["get"][r]
+        self._take_fish(o, t["give_fish"])
+        self._take_fish(p, t["get_fish"])
+        self.players[p]["fish"] += t["give_fish"]
+        self.players[o]["fish"] += t["get_fish"]
+        self.trade = None
+        self._log(f"{self._name(p)} accepts the trade.")
+
+    def _act_decline_trade(self, p: int, a: dict) -> None:
+        self._require(self.trade is not None and self.trade["from"] != p, "There's no offer to decline.")
+        self.trade = None
+        self._log(f"{self._name(p)} declines the trade.")
+
+    def _act_cancel_trade(self, p: int, a: dict) -> None:
+        self._require(self.trade is not None and self.trade["from"] == p, "You have no open offer.")
+        self.trade = None
+        self._log(f"{self._name(p)} withdraws the offer.")
+
+    # --- development cards
+
+    def _draw_dev(self, p: int) -> None:
+        card = self.dev_deck.pop()
+        self.players[p]["dev"].append({"card": card, "turn": self.turn_number})
+        self._log(f"{self._name(p)} gets a development card.",
+                  private={p: f"You get a development card: {DEV_NAMES[card]}."})
+
+    def _act_buy_dev(self, p: int, a: dict) -> None:
+        self._require_main_phase(p)
+        self._require(bool(self.dev_deck), "No development cards left.")
+        self._pay(p, COSTS["dev_card"])
+        self._draw_dev(p)
+
+    def playable_dev(self, p: int) -> list[str]:
+        if self.phase != "play" or p != self.current or self.pending or self.dev_played:
+            return []
+        return sorted({d["card"] for d in self.players[p]["dev"]
+                       if d["card"] in PLAYABLE_DEV and d["turn"] < self.turn_number})
+
+    def _act_play_dev(self, p: int, a: dict) -> None:
+        self._require_turn(p)
+        self._require(not self.pending, "Something needs to be resolved first.")
+        self._require(not self.dev_played, "You've already played a development card this turn.")
+        card = a.get("card")
+        self._require(card in PLAYABLE_DEV, "That card can't be played.")
+        dev = self.players[p]["dev"]
+        entry = next((d for d in dev if d["card"] == card and d["turn"] < self.turn_number), None)
+        self._require(entry is not None, "You don't have that card, or you got it this turn.")
+        if card == "year_of_plenty":
+            cards = _clean_cards(a.get("cards"))
+            self._require(_count(cards) == 2, "Pick 2 cards.")
+        if card == "monopoly":
+            res = a.get("resource")
+            self._require(res in RESOURCES, "Name a resource.")
+
+        dev.remove(entry)
+        self.dev_played = True
+        if card == "knight":
+            self.players[p]["knights"] += 1
+            self._log(f"{self._name(p)} plays a knight.")
+            self._update_largest_army()
+            self.pending.append({"type": "robber", "player": p})
+        elif card == "road_building":
+            self._log(f"{self._name(p)} plays road building.")
+            self._add_free_routes(p, 2)
+        elif card == "year_of_plenty":
+            for r, n in cards.items():
+                self.players[p]["hand"][r] += n
+            self._log(f"{self._name(p)} plays year of plenty: {self._describe(cards)}.")
+        else:
+            o = 1 - p
+            n = self.players[o]["hand"][res]
+            self.players[o]["hand"][res] = 0
+            self.players[p]["hand"][res] += n
+            self._log(f"{self._name(p)} plays monopoly on {res} and takes {n}.")
+
+    def _update_largest_army(self) -> None:
+        for q, pl in enumerate(self.players):
+            holder = self.largest_army
+            if q == holder or pl["knights"] < LARGEST_ARMY_MIN:
+                continue
+            if holder is None or pl["knights"] > self.players[holder]["knights"]:
+                self.largest_army = q
+                self._log(f"{self._name(q)} takes the largest army.")
+
+    def _add_free_routes(self, p: int, n: int) -> None:
+        item = self._pending_for("free_routes", p)
+        if item is None:
+            self.pending.append({"type": "free_routes", "player": p, "count": n})
+        else:
+            item["count"] += n
+
+    def _act_skip_free_routes(self, p: int, a: dict) -> None:
+        item = self._pending_for("free_routes", p)
+        self._require(item is not None, "You have no free roads or ships.")
+        self.pending.remove(item)
+        self._log(f"{self._name(p)} skips {item['count']} free road/ship.")
+
+    # --- fish
+
+    def _act_fish(self, p: int, a: dict) -> None:
+        self._require_main_phase(p)
+        tokens = self._clean_fish(a.get("tokens"))
+        self._require(bool(tokens), "Choose fish tokens to pay with.")
+        self._require(self._has_fish(p, tokens), "You don't have those fish tokens.")
+        items = a.get("items")
+        self._require(isinstance(items, list) and items, "Choose something to buy.")
+        kinds = Counter()
+        wanted = _empty_cards()
+        for item in items:
+            self._require(isinstance(item, dict) and item.get("kind") in FISH_PRICES, "Unknown purchase.")
+            kinds[item["kind"]] += 1
+            if item["kind"] == "resource":
+                self._require(item.get("resource") in RESOURCES, "Choose a resource.")
+                wanted[item["resource"]] += 1
+        cost = sum(FISH_PRICES[k] * n for k, n in kinds.items())
+        paid = sum(tokens)
+        self._require(paid >= cost, f"That costs {cost} fish.")
+        self._require(paid - min(tokens) < cost, "You don't need all of those tokens.")
+        o = 1 - p
+        me, opp = self.players[p], self.players[o]
+        self._require(kinds["bank"] <= 1 and (not kinds["bank"] or _count(me["bank"]) > 0),
+                      "Your bank is empty.")
+        self._require(kinds["remove_robber"] <= 1 and (not kinds["remove_robber"] or self.robber is not None),
+                      "The robber isn't on the board.")
+        self._require(kinds["remove_pirate"] <= 1 and (not kinds["remove_pirate"] or self.pirate is not None),
+                      "The pirate isn't on the board.")
+        self._require(kinds["steal"] <= _count(opp["hand"]),
+                      f"{self._name(o)} doesn't have enough cards in hand.")
+        self._require(kinds["dev_card"] <= len(self.dev_deck), "Not enough development cards left.")
+
+        self._take_fish(p, tokens)
+        self.fish_spent += tokens
+        self._log(f"{self._name(p)} spends {paid} fish.")
+        if kinds["bank"]:
+            n = _count(me["bank"])
+            for r in RESOURCES:
+                me["hand"][r] += me["bank"][r]
+                me["bank"][r] = 0
+            self._log(f"{self._name(p)} takes {n} card{'s' if n > 1 else ''} out of the bank.")
+        if kinds["remove_robber"]:
+            self.robber = None
+            self._log(f"{self._name(p)} removes the robber.")
+        if kinds["remove_pirate"]:
+            self.pirate = None
+            self._log(f"{self._name(p)} removes the pirate.")
+        for _ in range(kinds["steal"]):
+            card = self._random_card(opp["hand"])
+            opp["hand"][card] -= 1
+            me["hand"][card] += 1
+            self._log(f"{self._name(p)} steals {card} from {self._name(o)}.")
+        if _count(wanted):
+            for r, n in wanted.items():
+                me["hand"][r] += n
+            self._log(f"{self._name(p)} takes {self._describe(wanted)}.")
+        for _ in range(kinds["dev_card"]):
+            self._draw_dev(p)
+        if kinds["route"]:
+            self._add_free_routes(p, kinds["route"])
+
+    # --- card bank
+
+    def _act_deposit(self, p: int, a: dict) -> None:
+        self._require(self.phase == "play", "The game isn't in progress.")
+        self._require(not self.pending, "Wait until nothing is being resolved.")
+        cards = _clean_cards(a.get("cards"))
+        n = _count(cards)
+        self._require(n > 0, "Choose cards to bank.")
+        self._require(self._has_cards(p, cards), "You don't have those cards.")
+        for r, k in cards.items():
+            self.players[p]["hand"][r] -= k
+            self.players[p]["bank"][r] += k
+        self._log(f"{self._name(p)} banks {n} card{'s' if n > 1 else ''}.")
+
+    # --- old boot
+
+    def can_pass_boot(self, p: int) -> bool:
+        return (self.phase == "play" and p == self.current and self.rolled and not self.pending
+                and self.boot_holder == p and self.public_vp(1 - p) > self.public_vp(p))
+
+    def _act_pass_boot(self, p: int, a: dict) -> None:
+        self._require_main_phase(p)
+        self._require(self.boot_holder == p, "You don't have the old boot.")
+        self._require(self.public_vp(1 - p) > self.public_vp(p),
+                      "You can only pass the boot to a player with more VP.")
+        self.boot_holder = 1 - p
+        self._log(f"{self._name(p)} passes the old boot to {self._name(1 - p)}.")
+
+    # --- moving ships
+
+    def _ship_has_open_end(self, p: int, e: int) -> bool:
+        for v in self.topo.edges[e].vertices:
+            b = self.buildings.get(v)
+            if b is not None and b["owner"] == p:
+                continue
+            if not any(
+                e2 != e and self.routes.get(e2, {}).get("owner") == p and self.routes[e2]["kind"] == "ship"
+                for e2 in self.topo.vertices[v].edges
+            ):
+                return True
+        return False
+
+    def movable_ships(self, p: int) -> list[int]:
+        if self.ship_moved:
+            return []
+        blocked = self._pirate_edges()
+        return [
+            e for e, r in self.routes.items()
+            if r["owner"] == p and r["kind"] == "ship" and r["turn"] != self.turn_number
+            and e not in blocked and self._ship_has_open_end(p, e)
+        ]
+
+    def _act_move_ship(self, p: int, a: dict) -> None:
+        self._require_main_phase(p)
+        src, dst = self._int_arg(a, "from"), self._int_arg(a, "to")
+        self._require(not self.ship_moved, "You've already moved a ship this turn.")
+        self._require(src in self.movable_ships(p), "That ship can't be moved.")
+        self._require(dst in self.legal_ships(p, ignore=src), "The ship can't go there.")
+        self.routes[dst] = self.routes.pop(src)
+        self.ship_moved = True
+        self._log(f"{self._name(p)} moves a ship.")
+        self._update_longest_route()
+
     # ------------------------------------------------------------------ views
 
     def legal_for(self, p: int) -> dict:
@@ -690,6 +1019,10 @@ class Game:
                 legal["city"] = self.legal_cities(p)
             legal["road"] = self.legal_roads(p)
             legal["ship"] = self.legal_ships(p)
+            movable = self.movable_ships(p)
+            if movable:
+                legal["move_ship"] = movable
+                legal["ship_targets"] = {e: self.legal_ships(p, ignore=e) for e in movable}
         return legal
 
     def view_for(self, me: int | None) -> dict:
@@ -717,7 +1050,7 @@ class Game:
                     "hand": dict(pl["hand"]),
                     "bank": dict(pl["bank"]),
                     "fish": sorted(pl["fish"]),
-                    "dev": [dict(d) for d in pl["dev"]],
+                    "dev": [dict(d, new=d["turn"] == self.turn_number) for d in pl["dev"]],
                     "total_vp": self.total_vp(i),
                 })
             players.append(info)
@@ -751,6 +1084,12 @@ class Game:
             "log": log,
             "legal": self.legal_for(me) if me is not None else {},
             "costs": COSTS,
+            "fish_prices": FISH_PRICES,
+            "rates": self.trade_rates(me) if me is not None else {},
+            "playable_dev": self.playable_dev(me) if me is not None else [],
+            "can_pass_boot": self.can_pass_boot(me) if me is not None else False,
+            "ship_moved": self.ship_moved,
+            "dev_played": self.dev_played,
         }
 
     # ------------------------------------------------------------ persistence

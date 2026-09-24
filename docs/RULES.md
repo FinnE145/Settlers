@@ -98,17 +98,25 @@ city = 2 wheat + 3 ore, development card = sheep + wheat + ore.
 
 ## Development cards
 
-- You can't play a card on the turn you bought it (victory point cards are never played;
-  they count automatically). At most one development card is played per turn.
-- Year of plenty: take any 2 resource cards. Monopoly: the opponent gives you every card of
-  the named resource from their hand (banked cards are safe).
+- You can't play a card on the turn you got it (victory point cards are never played;
+  they count automatically). At most one development card is played per turn, at any point
+  in your turn, including before rolling.
+- Knight: move the robber or pirate as on a 7 (no discards). Road building: 2 free roads
+  and/or ships. Year of plenty: take any 2 resource cards. Monopoly: the opponent gives you
+  every card of the named resource from their hand (banked cards are safe).
+- Free roads/ships must be placed before doing anything else; you may give up the rest if
+  you can't or don't want to place them.
 
 ## Trading
 
-- The active player may trade with the opponent (resources and fish tokens).
+- After the active player rolls, either player can propose a trade; the other accepts or
+  declines, and a new proposal replaces the open one. Resources and fish tokens can be
+  traded (fish by token value). Both sides must include something.
 - Bank rates: 4:1 by default, 3:1 at a generic harbour.
 - 2:1 harbours work both ways: at a wood harbour, 2 wood → 1 of anything, or
   2 of the same other resource → 1 wood.
+- With cities on two or more 2:1 harbours, those harbours' resources trade 1:1 with each
+  other (e.g. cities on the wood and brick harbours: wood ↔ brick 1:1).
 
 ## Fish
 
@@ -122,7 +130,8 @@ city = 2 wheat + 3 ore, development card = sheep + wheat + ore.
   aren't taken by monopoly, and don't count for the 7 rule.
 - The opponent sees how many tokens you have, not their values.
 - **Spending (your own turn, after rolling):** hand in any tokens and buy any combination of
-  the items below whose total cost fits. There is no change; excess fish are lost.
+  the items below whose total cost fits. There is no change; excess fish are lost, but every
+  token handed in must be needed to cover the cost.
   - 1 fish: take everything out of your card bank.
   - 2 fish: remove the robber or the pirate from the board.
   - 3 fish: steal a random resource card from the opponent's hand.
