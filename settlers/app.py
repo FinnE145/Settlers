@@ -18,9 +18,9 @@ COOKIE_MAX_AGE = 60 * 60 * 24 * 30
 PING_SECONDS = 20
 
 
-def create_app() -> Flask:
+def create_app(store: GameStore | None = None) -> Flask:
     app = Flask(__name__)
-    store = GameStore()
+    store = store or GameStore()
     app.extensions["settlers_store"] = store
     sock = Sock(app)
 

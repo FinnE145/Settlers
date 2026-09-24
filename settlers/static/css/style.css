@@ -197,7 +197,7 @@ button.danger { color: var(--red); border-color: #e0b4b4; }
 }
 
 .picker { display: flex; flex-direction: column; gap: 3px; margin-bottom: 6px; }
-.picker-row { display: grid; grid-template-columns: 110px auto 2em auto; align-items: center; gap: 4px; }
+.picker-row { display: grid; grid-template-columns: 110px 2em 2em 2em; align-items: center; gap: 4px; }
 .picker-n { text-align: center; font-weight: 700; }
 
 .log {
