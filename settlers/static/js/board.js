@@ -20,7 +20,7 @@ export const TERRAIN = {
   mountains: { label: 'Mountains', pattern: 'pat-mountains' },
   gold: { label: 'Gold field', pattern: 'pat-gold' },
   desert: { label: 'Desert', pattern: 'pat-desert' },
-  lake: { label: 'Lake', pattern: 'pat-lake' },
+  lake: { label: 'Lake', pattern: 'pat-fishery' },
   sea: { label: 'Sea', pattern: 'pat-sea' },
 };
 
@@ -65,9 +65,6 @@ function Patterns() {
     <pattern id="pat-desert" width="12" height="12" patternUnits="userSpaceOnUse">
       <circle cx="3" cy="3" r="1" class="p-desert" />
       <circle cx="9" cy="9" r="1" class="p-desert" />
-    </pattern>
-    <pattern id="pat-lake" width="20" height="12" patternUnits="userSpaceOnUse">
-      <path d="M0 6 Q5 2 10 6 T20 6" class="p-lake" />
     </pattern>
     <pattern id="pat-sea" width="24" height="16" patternUnits="userSpaceOnUse">
       <path d="M0 8 Q6 5 12 8 T24 8" class="p-sea" />

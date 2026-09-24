@@ -43,8 +43,8 @@ city = 2 wheat + 3 ore, development card = sheep + wheat + ore.
 
 - Snake order (A, B, B, A). Each placement is a settlement plus a road, or a ship if the
   settlement is on the coast. Starting settlements may go anywhere legal.
-- The second settlement produces one card from each adjacent producing hex (gold: your choice).
-  If it touches a fishing ground you also draw one fish token.
+- Each starting settlement (first and second) gives one card from every adjacent producing
+  hex (gold: your choice), plus one fish token for each fishing ground or lake it touches.
 - The robber and the pirate start off the board.
 
 ## Turn
