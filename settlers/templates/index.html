@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Settlers</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <script type="importmap" nonce="{{ csp_nonce }}">
+    {
+      "imports": {
+        "preact": "{{ url_for('static', filename='vendor/preact.module.js') }}",
+        "preact/hooks": "{{ url_for('static', filename='vendor/preact-hooks.module.js') }}",
+        "htm": "{{ url_for('static', filename='vendor/htm.module.js') }}"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module" src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

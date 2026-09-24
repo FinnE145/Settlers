@@ -1,0 +1,119 @@
+:root {
+  --bg: #f4f1ea;
+  --panel: #ffffff;
+  --text: #222;
+  --muted: #666;
+  --border: #d0c8b8;
+  --red: #d32f2f;
+  --blue: #1e40c8;
+  --sea: #3f7fc0;
+  --frame: #2b5d92;
+
+  --forest: #2e7d32;
+  --hills: #c8643b;
+  --pasture: #8bc34a;
+  --fields: #ecd28f;
+  --mountains: #8e8e8e;
+  --gold: #f7b500;
+  --desert: #e6d3a3;
+  --lake: #6ec1ea;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+button {
+  font: inherit;
+  padding: 0.45em 1em;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  cursor: pointer;
+}
+button:hover:not(:disabled) { background: #f0ece2; }
+button:disabled { opacity: 0.5; cursor: default; }
+button.primary { background: #2e5e8e; border-color: #2e5e8e; color: #fff; }
+button.primary:hover:not(:disabled) { background: #244b72; }
+
+.topbar {
+  display: flex;
+  align-items: baseline;
+  gap: 1em;
+  padding: 0.5em 1em;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+.topbar h1 { margin: 0; font-size: 1.3em; }
+.subtitle { color: var(--muted); }
+
+.error { color: var(--red); margin: 0.5em 1em; }
+
+.setup { max-width: 900px; margin: 0 auto; }
+.board-wrap { padding: 1em; }
+.actions { display: flex; gap: 0.6em; justify-content: center; padding-bottom: 1.5em; }
+
+/* ---- Board ---- */
+svg.board { width: 100%; height: auto; display: block; }
+.frame-bg { fill: var(--frame); }
+.hex { stroke: #5a4a32; stroke-width: 1.2; }
+.hex.frame { fill: var(--frame); stroke: #24527f; }
+.overlay { pointer-events: none; }
+
+.t-forest { fill: var(--forest); }
+.t-hills { fill: var(--hills); }
+.t-pasture { fill: var(--pasture); }
+.t-fields { fill: var(--fields); }
+.t-mountains { fill: var(--mountains); }
+.t-gold { fill: var(--gold); }
+.t-desert { fill: var(--desert); }
+.t-lake { fill: var(--lake); }
+.t-sea { fill: var(--sea); stroke: #2f6aa5; }
+
+.p-forest { fill: #1b5e20; }
+.p-pasture { fill: #f1f8e9; }
+.p-fields { stroke: #c9a24a; stroke-width: 2; }
+.p-hills { stroke: #97472a; stroke-width: 1; fill: none; }
+.p-mountains { fill: #6a6a6a; }
+.p-snow { fill: #fafafa; }
+.p-gold { fill: #fff6c2; }
+.p-desert { fill: #c2a867; }
+.p-lake { stroke: #e3f5ff; stroke-width: 1.4; fill: none; }
+.p-sea { stroke: #5a95d0; stroke-width: 1; fill: none; }
+.p-fish { fill: #1d5f99; opacity: 0.55; }
+
+.token-bg { fill: #fbf5e4; stroke: #6b5a3c; stroke-width: 1; }
+.token-num {
+  font-size: 13px; font-weight: 700; fill: #222;
+  text-anchor: middle; dominant-baseline: middle;
+}
+.token-num.red, .pip.red { fill: var(--red); }
+.pip { fill: #222; }
+.token-small {
+  font-size: 8px; font-weight: 700; fill: #1d5f99;
+  text-anchor: middle; dominant-baseline: middle;
+}
+
+.fishery-band { fill: #a9dcf5; stroke: #1d5f99; stroke-width: 1; }
+
+.dock { stroke: #7a5a3a; stroke-width: 3; stroke-linecap: round; }
+.harbour-ring { fill: #fff; stroke-width: 4; }
+.harbour-ring.generic { stroke: #555; }
+.harbour-ring.t-forest { stroke: var(--forest); fill: #fff; }
+.harbour-ring.t-hills { stroke: var(--hills); fill: #fff; }
+.harbour-ring.t-pasture { stroke: var(--pasture); fill: #fff; }
+.harbour-ring.t-fields { stroke: #c9a24a; fill: #fff; }
+.harbour-ring.t-mountains { stroke: var(--mountains); fill: #fff; }
+.harbour-text {
+  font-size: 9px; font-weight: 700; fill: #222;
+  text-anchor: middle; dominant-baseline: middle;
+}
+.harbour-res {
+  font-size: 6px; fill: #333;
+  text-anchor: middle; dominant-baseline: middle;
+}
