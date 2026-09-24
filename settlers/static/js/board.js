@@ -138,6 +138,108 @@ function boardBounds(board) {
   return [minX, minY, Math.max(...xs) + m - minX, Math.max(...ys) + m - minY];
 }
 
+// ------------------------------------------------------------------ pieces
+
+const vpos = (board, vid) => [px(board.vertices[vid].x), py(board.vertices[vid].y)];
+const hpos = (board, hid) => [px(board.hexes[hid].x), py(board.hexes[hid].y)];
+export const COLOURS = ['red', 'blue'];
+
+function edgeEnds(board, eid, trim = 0) {
+  const [a, b] = board.edges[eid].v.map((vid) => vpos(board, vid));
+  return [lerp(a, b, trim), lerp(a, b, 1 - trim)];
+}
+
+function shipPoints(board, eid) {
+  const [a, b] = edgeEnds(board, eid);
+  const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  const u = [(b[0] - a[0]) / len, (b[1] - a[1]) / len];
+  const n = [-u[1], u[0]];
+  const m = lerp(a, b, 0.5);
+  const L = len * 0.62;
+  const W = 9;
+  const pt = (s, t) => [m[0] + u[0] * s + n[0] * t, m[1] + u[1] * s + n[1] * t];
+  return [pt(L / 2, 0), pt(L / 4, W / 2), pt(-L / 4, W / 2), pt(-L / 2, 0), pt(-L / 4, -W / 2), pt(L / 4, -W / 2)]
+    .map((p) => p.join(',')).join(' ');
+}
+
+const SETTLEMENT = [[0, -10], [8, -3], [8, 8], [-8, 8], [-8, -3]];
+const CITY = [[-11, 10], [11, 10], [11, -2], [2, -2], [2, -8], [-4.5, -14], [-11, -8]];
+const shape = (pts, [x, y]) => pts.map(([dx, dy]) => `${x + dx},${y + dy}`).join(' ');
+
+export function Pieces({ board, game }) {
+  const routes = game.routes.map((r) => {
+    const colour = COLOURS[r.owner];
+    if (r.kind === 'road') {
+      const [a, b] = edgeEnds(board, r.edge, 0.12);
+      return html`<g key=${'r' + r.edge}>
+        <line x1=${a[0]} y1=${a[1]} x2=${b[0]} y2=${b[1]} class="road-outline" />
+        <line x1=${a[0]} y1=${a[1]} x2=${b[0]} y2=${b[1]} class=${'road p-' + colour} />
+      </g>`;
+    }
+    const m = lerp(...edgeEnds(board, r.edge), 0.5);
+    return html`<g key=${'s' + r.edge}>
+      <polygon points=${shipPoints(board, r.edge)} class=${'ship p-' + colour} />
+      <circle cx=${m[0]} cy=${m[1]} r="2" class="mast" />
+    </g>`;
+  });
+  const buildings = game.buildings.map((b) => html`<polygon key=${'b' + b.vertex}
+    points=${shape(b.kind === 'city' ? CITY : SETTLEMENT, vpos(board, b.vertex))}
+    class=${'building p-' + COLOURS[b.owner]} />`);
+  return html`<g class="pieces">
+    ${routes}
+    ${buildings}
+    ${game.robber != null && html`<${Robber} pos=${hpos(board, game.robber)} />`}
+    ${game.pirate != null && html`<${Pirate} pos=${hpos(board, game.pirate)} />`}
+  </g>`;
+}
+
+function Robber({ pos: [x, y] }) {
+  const cx = x - 22;
+  return html`<g class="robber"><title>Robber</title>
+    <path d=${`M${cx - 7} ${y + 12} L${cx - 4} ${y - 2} L${cx + 4} ${y - 2} L${cx + 7} ${y + 12} Z`} />
+    <circle cx=${cx} cy=${y - 7} r="6" />
+  </g>`;
+}
+
+function Pirate({ pos: [x, y] }) {
+  const cx = x + 20;
+  return html`<g class="pirate"><title>Pirate</title>
+    <path d=${`M${cx - 12} ${y + 2} L${cx + 12} ${y + 2} L${cx + 8} ${y + 9} L${cx - 8} ${y + 9} Z`} />
+    <path d=${`M${cx} ${y + 1} L${cx} ${y - 16} L${cx + 10} ${y - 4} Z`} />
+  </g>`;
+}
+
+// ---------------------------------------------------------------- targets
+
+/** A thin rectangle along an edge, used as its click target. */
+function edgeBox(board, eid, halfWidth = 6) {
+  const [a, b] = edgeEnds(board, eid, 0.18);
+  const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  const n = [-(b[1] - a[1]) / len * halfWidth, (b[0] - a[0]) / len * halfWidth];
+  return [[a[0] + n[0], a[1] + n[1]], [b[0] + n[0], b[1] + n[1]],
+    [b[0] - n[0], b[1] - n[1]], [a[0] - n[0], a[1] - n[1]]].map((p) => p.join(',')).join(' ');
+}
+
+/** Clickable highlights: kind is 'vertex', 'edge' or 'hex'. */
+export function Targets({ board, kind, ids, selected, onPick }) {
+  if (!ids || !ids.length) return null;
+  return html`<g class="targets">
+    ${ids.map((id) => {
+      const cls = 'target' + (id === selected ? ' selected' : '');
+      const pick = () => onPick(id);
+      if (kind === 'vertex') {
+        const [x, y] = vpos(board, id);
+        return html`<circle key=${id} cx=${x} cy=${y} r="9" class=${cls} onClick=${pick} />`;
+      }
+      if (kind === 'edge') {
+        return html`<polygon key=${id} points=${edgeBox(board, id)} class=${cls + ' edge'} onClick=${pick} />`;
+      }
+      return html`<polygon key=${id} points=${hexPoints(board.hexes[id])} class=${cls + ' hex-target'}
+        onClick=${pick} />`;
+    })}
+  </g>`;
+}
+
 export function Board({ board, children }) {
   const [vx, vy, vw, vh] = boardBounds(board);
   return html`<svg class="board" viewBox="${vx} ${vy} ${vw} ${vh}" xmlns="http://www.w3.org/2000/svg">

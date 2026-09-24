@@ -151,7 +151,8 @@ class Topology:
             "cols": self.cols,
             "rows": self.rows,
             "hexes": [
-                {"id": h.id, "x": h.x, "y": h.y, "frame": h.frame, "corners": h.corners}
+                {"id": h.id, "x": h.x, "y": h.y, "frame": h.frame,
+                 "corners": h.corners, "edges": h.edges}
                 for h in self.hexes
             ],
             "vertices": [{"id": v.id, "x": v.x, "y": v.y} for v in self.vertices],

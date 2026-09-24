@@ -1,0 +1,771 @@
+"""Game state and rules.
+
+A ``Game`` is driven entirely through ``act(player, action)``, where ``action`` is a
+plain dict like ``{"type": "build_road", "edge": 12}``. Illegal actions raise
+``RuleError`` with a message suitable for showing to the player. ``view_for`` gives
+the state as one player may see it, and ``to_dict``/``from_dict`` round-trip the
+whole state as JSON-compatible data.
+"""
+
+from __future__ import annotations
+
+import random
+
+from .board import Board
+from .constants import (
+    BOOT,
+    CITY_LIMIT,
+    COSTS,
+    DEV_CARDS,
+    FISH_TOKENS,
+    GOLD,
+    LAKE,
+    LAKE_NUMBERS,
+    LARGEST_ARMY_MIN,
+    LONGEST_ROUTE_MIN,
+    PLAYER_COLOURS,
+    RESOURCES,
+    SETTLEMENT_LIMIT,
+    TERRAIN_RESOURCE,
+    VP_TO_WIN,
+)
+
+
+class RuleError(Exception):
+    """An action the rules don't allow. The message is shown to the player."""
+
+
+def _empty_cards() -> dict:
+    return {r: 0 for r in RESOURCES}
+
+
+def _new_player() -> dict:
+    return {
+        "hand": _empty_cards(),
+        "bank": _empty_cards(),
+        "fish": [],  # token values (1-3); the boot is tracked separately
+        "dev": [],  # unplayed cards: {"card": name, "turn": turn bought}
+        "knights": 0,
+    }
+
+
+def _count(cards: dict) -> int:
+    return sum(cards.values())
+
+
+def _clean_cards(cards) -> dict:
+    """Validate a {resource: count} dict from a client."""
+    if not isinstance(cards, dict):
+        raise RuleError("Invalid cards.")
+    out = _empty_cards()
+    for res, n in cards.items():
+        if res not in RESOURCES or not isinstance(n, int) or isinstance(n, bool) or n < 0:
+            raise RuleError("Invalid cards.")
+        out[res] = n
+    return out
+
+
+class Game:
+    def __init__(self, board: Board, first_player: int = 0, rng: random.Random | None = None,
+                 _state: dict | None = None):
+        self.rng = rng or random.SystemRandom()
+        self.board = board
+        self.topo = board.topology
+        if _state is not None:
+            self.__dict__.update(_state)
+            return
+
+        self.players = [_new_player() for _ in PLAYER_COLOURS]
+        self.phase = "setup"  # setup | play | finished
+        self.first_player = first_player
+        self.current = first_player
+        self.turn_number = 0  # 0 during setup, then 1, 2, ...
+        second = 1 - first_player
+        self.setup_order = [first_player, second, second, first_player]
+        self.setup_step = 0
+        self.setup_awaiting = "settlement"  # settlement | route
+        self.setup_vertex = None  # settlement just placed, awaiting its road/ship
+        self.rolled = False
+        self.dice = None
+        self.pending: list[dict] = []
+        self.buildings: dict[int, dict] = {}  # vertex -> {"owner", "kind"}
+        self.routes: dict[int, dict] = {}  # edge -> {"owner", "kind", "turn"}
+        self.robber = None  # hex id, or None while off the board
+        self.pirate = None
+        self.dev_deck = [card for card, n in DEV_CARDS.items() for _ in range(n)]
+        self.rng.shuffle(self.dev_deck)
+        self.fish_bag = list(FISH_TOKENS) + [BOOT]
+        self.rng.shuffle(self.fish_bag)
+        self.fish_spent: list[int] = []
+        self.boot_holder = None
+        self.longest_route = None  # player index holding the title
+        self.largest_army = None
+        self.ship_moved = False
+        self.dev_played = False
+        self.trade = None
+        self.winner = None
+        self.log: list[dict] = []
+        self._log(f"{self._name(first_player)} places first.")
+
+    # ------------------------------------------------------------------ helpers
+
+    @staticmethod
+    def _name(p: int) -> str:
+        return PLAYER_COLOURS[p].capitalize()
+
+    def _log(self, text: str, private: dict | None = None) -> None:
+        entry = {"n": len(self.log), "text": text}
+        if private:
+            entry["private"] = {str(k): v for k, v in private.items()}
+        self.log.append(entry)
+
+    def _require(self, cond: bool, message: str) -> None:
+        if not cond:
+            raise RuleError(message)
+
+    def _require_turn(self, p: int) -> None:
+        self._require(self.phase == "play", "The game isn't in progress.")
+        self._require(p == self.current, "It's not your turn.")
+
+    def _require_main_phase(self, p: int) -> None:
+        """Your turn, dice rolled, nothing outstanding."""
+        self._require_turn(p)
+        self._require(not self.pending, "Something needs to be resolved first.")
+        self._require(self.rolled, "Roll the dice first.")
+
+    def _pending_for(self, kind: str, p: int) -> dict | None:
+        for item in self.pending:
+            if item["type"] == kind and item["player"] == p:
+                return item
+        return None
+
+    def _pay(self, p: int, cost: dict) -> None:
+        hand = self.players[p]["hand"]
+        self._require(all(hand[r] >= n for r, n in cost.items()), "You can't afford that.")
+        for r, n in cost.items():
+            hand[r] -= n
+
+    def _can_afford(self, p: int, cost: dict) -> bool:
+        hand = self.players[p]["hand"]
+        return all(hand[r] >= n for r, n in cost.items())
+
+    def _describe(self, cards: dict) -> str:
+        parts = [f"{n} {r}" for r, n in cards.items() if n]
+        return ", ".join(parts) if parts else "nothing"
+
+    # --------------------------------------------------------------- board queries
+
+    def _vertex_touches_land(self, v: int) -> bool:
+        return any(self.board.is_land(h) for h in self.topo.vertices[v].hexes)
+
+    def _edge_touches_land(self, e: int) -> bool:
+        return any(self.board.is_land(h) for h in self.topo.edges[e].hexes)
+
+    def _edge_touches_sea(self, e: int) -> bool:
+        return any(self.board.is_sea(h) for h in self.topo.edges[e].hexes)
+
+    def _pirate_edges(self) -> set:
+        if self.pirate is None:
+            return set()
+        return {e for e in self.topo.hexes[self.pirate].edges if e is not None}
+
+    def _distance_ok(self, v: int) -> bool:
+        return v not in self.buildings and not any(
+            n in self.buildings for n in self.topo.vertices[v].neighbours
+        )
+
+    def _piece_counts(self, p: int) -> tuple[int, int]:
+        s = sum(1 for b in self.buildings.values() if b["owner"] == p and b["kind"] == "settlement")
+        c = sum(1 for b in self.buildings.values() if b["owner"] == p and b["kind"] == "city")
+        return s, c
+
+    def _limits_lifted(self, p: int) -> bool:
+        s, c = self._piece_counts(p)
+        return s >= SETTLEMENT_LIMIT and c >= CITY_LIMIT
+
+    def _settlement_piece_available(self, p: int) -> bool:
+        return self._limits_lifted(p) or self._piece_counts(p)[0] < SETTLEMENT_LIMIT
+
+    def _city_piece_available(self, p: int) -> bool:
+        return self._limits_lifted(p) or self._piece_counts(p)[1] < CITY_LIMIT
+
+    def _route_connects(self, p: int, e: int, kind: str, ignore: int | None = None) -> bool:
+        """A new road/ship at ``e`` must join your building, or your route of the same
+        kind through a corner without an opponent's building."""
+        for v in self.topo.edges[e].vertices:
+            b = self.buildings.get(v)
+            if b is not None:
+                if b["owner"] == p:
+                    return True
+                continue
+            for e2 in self.topo.vertices[v].edges:
+                if e2 in (e, ignore):
+                    continue
+                r = self.routes.get(e2)
+                if r is not None and r["owner"] == p and r["kind"] == kind:
+                    return True
+        return False
+
+    def legal_settlements(self, p: int) -> list[int]:
+        setup = self.phase == "setup"
+        out = []
+        for v in self.topo.vertices:
+            if not self._vertex_touches_land(v.id) or not self._distance_ok(v.id):
+                continue
+            if setup or any(
+                self.routes.get(e, {}).get("owner") == p for e in v.edges
+            ):
+                out.append(v.id)
+        return out
+
+    def legal_cities(self, p: int) -> list[int]:
+        return [v for v, b in self.buildings.items() if b["owner"] == p and b["kind"] == "settlement"]
+
+    def legal_roads(self, p: int) -> list[int]:
+        if self.phase == "setup":
+            return [e for e in self._setup_edges() if self._edge_touches_land(e)]
+        return [
+            e.id for e in self.topo.edges
+            if e.id not in self.routes and self._edge_touches_land(e.id)
+            and self._route_connects(p, e.id, "road")
+        ]
+
+    def legal_ships(self, p: int, ignore: int | None = None) -> list[int]:
+        blocked = self._pirate_edges()
+        if self.phase == "setup":
+            return [e for e in self._setup_edges() if self._edge_touches_sea(e) and e not in blocked]
+        return [
+            e.id for e in self.topo.edges
+            if e.id not in self.routes and e.id != ignore and e.id not in blocked
+            and self._edge_touches_sea(e.id)
+            and self._route_connects(p, e.id, "ship", ignore=ignore)
+        ]
+
+    def _setup_edges(self) -> list[int]:
+        if self.setup_awaiting != "route" or self.setup_vertex is None:
+            return []
+        return [e for e in self.topo.vertices[self.setup_vertex].edges if e not in self.routes]
+
+    # ------------------------------------------------------------------ scoring
+
+    def route_length(self, p: int) -> int:
+        """Longest chain of p's roads/ships. Roads and ships only join at p's own
+        buildings, and an opponent's building breaks a chain."""
+        own = {e: r["kind"] for e, r in self.routes.items() if r["owner"] == p}
+        if not own:
+            return 0
+        at_vertex: dict[int, list] = {}
+        for e in own:
+            for v in self.topo.edges[e].vertices:
+                at_vertex.setdefault(v, []).append(e)
+
+        def extend(v, last, used):
+            b = self.buildings.get(v)
+            if b is not None and b["owner"] != p:
+                return len(used)
+            mixed_ok = b is not None and b["owner"] == p
+            best = len(used)
+            for e2 in at_vertex.get(v, ()):
+                if e2 in used or (own[e2] != own[last] and not mixed_ok):
+                    continue
+                a, c = self.topo.edges[e2].vertices
+                best = max(best, extend(c if a == v else a, e2, used | {e2}))
+            return best
+
+        best = 0
+        for e in own:
+            a, c = self.topo.edges[e].vertices
+            best = max(best, extend(c, e, frozenset([e])), extend(a, e, frozenset([e])))
+        return best
+
+    def _update_longest_route(self) -> None:
+        lengths = [self.route_length(p) for p in range(len(self.players))]
+        holder = self.longest_route
+        new = holder
+        if holder is None:
+            for p, n in enumerate(lengths):
+                if n >= LONGEST_ROUTE_MIN and all(n > m for q, m in enumerate(lengths) if q != p):
+                    new = p
+        else:
+            challengers = [p for p, n in enumerate(lengths) if p != holder and n > lengths[holder]]
+            if challengers and lengths[challengers[0]] >= LONGEST_ROUTE_MIN:
+                new = challengers[0]
+            elif lengths[holder] < LONGEST_ROUTE_MIN:
+                new = None
+        if new != holder:
+            self.longest_route = new
+            if new is None:
+                self._log("Nobody holds the longest trade route now.")
+            else:
+                self._log(f"{self._name(new)} takes the longest trade route ({lengths[new]}).")
+
+    def public_vp(self, p: int) -> int:
+        vp = 0
+        for b in self.buildings.values():
+            if b["owner"] == p:
+                vp += 2 if b["kind"] == "city" else 1
+        if self.longest_route == p:
+            vp += 2
+        if self.largest_army == p:
+            vp += 2
+        return vp
+
+    def total_vp(self, p: int) -> int:
+        hidden = sum(1 for d in self.players[p]["dev"] if d["card"] == "victory_point")
+        return self.public_vp(p) + hidden
+
+    def vp_needed(self, p: int) -> int:
+        return VP_TO_WIN + (1 if self.boot_holder == p else 0)
+
+    def _check_winner(self) -> None:
+        if self.phase != "play":
+            return
+        p = self.current
+        if self.total_vp(p) >= self.vp_needed(p):
+            self.phase = "finished"
+            self.winner = p
+            self.pending = []
+            self.trade = None
+            self._log(f"{self._name(p)} wins with {self.total_vp(p)} VP!")
+
+    # ------------------------------------------------------------------ fish
+
+    def _take_fish_token(self) -> int:
+        if not self.fish_bag:
+            self.fish_bag = self.fish_spent
+            self.fish_spent = []
+            self.rng.shuffle(self.fish_bag)
+        return self.fish_bag.pop()
+
+    def _draw_fish(self, demand: list[int]) -> None:
+        total = sum(demand)
+        if total == 0:
+            return
+        if total > len(self.fish_bag) + len(self.fish_spent):
+            self._log("Not enough fish tokens left; nobody gets fish this time.")
+            return
+        order = [self.current] + [p for p in range(len(self.players)) if p != self.current]
+        for p in order:
+            drawn = []
+            for _ in range(demand[p]):
+                token = self._take_fish_token()
+                if token == BOOT:
+                    self.boot_holder = p
+                    self._log(f"{self._name(p)} fished up the old boot!")
+                else:
+                    self.players[p]["fish"].append(token)
+                    drawn.append(token)
+            if drawn:
+                values = ", ".join(str(t) for t in drawn)
+                self._log(
+                    f"{self._name(p)} draws {len(drawn)} fish token{'s' if len(drawn) > 1 else ''}.",
+                    private={p: f"You draw fish token{'s' if len(drawn) > 1 else ''}: {values}."},
+                )
+
+    # --------------------------------------------------------------- production
+
+    def _building_yield(self, v: int) -> tuple[int, int] | None:
+        b = self.buildings.get(v)
+        if b is None:
+            return None
+        return b["owner"], 2 if b["kind"] == "city" else 1
+
+    def _produce(self, roll: int) -> None:
+        n_players = len(self.players)
+        gains = [_empty_cards() for _ in range(n_players)]
+        gold = [0] * n_players
+        fish = [0] * n_players
+
+        for h in self.topo.hexes:
+            if self.board.numbers[h.id] != roll or self.robber == h.id:
+                continue
+            terrain = self.board.terrain[h.id]
+            for v in h.corners:
+                y = self._building_yield(v) if v is not None else None
+                if y is None:
+                    continue
+                owner, amount = y
+                if terrain == GOLD:
+                    gold[owner] += amount
+                else:
+                    gains[owner][TERRAIN_RESOURCE[terrain]] += amount
+
+        for f in self.board.fisheries:
+            if f["number"] != roll:
+                continue
+            per = [0] * n_players
+            for v in f["vertices"]:
+                y = self._building_yield(v)
+                if y is not None:
+                    per[y[0]] += y[1]
+            if self.pirate == f["hex"]:
+                per = [n // 2 for n in per]
+            fish = [a + b for a, b in zip(fish, per)]
+
+        lake = self.board.lake_hex
+        if roll in LAKE_NUMBERS and lake is not None and self.robber != lake:
+            for v in self.topo.hexes[lake].corners:
+                y = self._building_yield(v)
+                if y is not None:
+                    fish[y[0]] += y[1]
+
+        for p in range(n_players):
+            if _count(gains[p]):
+                for r, n in gains[p].items():
+                    self.players[p]["hand"][r] += n
+                self._log(f"{self._name(p)} gets {self._describe(gains[p])}.")
+            if gold[p]:
+                self.pending.append({"type": "gold", "player": p, "count": gold[p]})
+                self._log(f"{self._name(p)} picks {gold[p]} card{'s' if gold[p] > 1 else ''} from gold.")
+        self._draw_fish(fish)
+
+    def _starting_production(self, p: int, v: int) -> None:
+        gains = _empty_cards()
+        gold = 0
+        fish = 0
+        for h in self.topo.vertices[v].hexes:
+            terrain = self.board.terrain[h]
+            if terrain in TERRAIN_RESOURCE:
+                gains[TERRAIN_RESOURCE[terrain]] += 1
+            elif terrain == GOLD:
+                gold += 1
+            elif terrain == LAKE:
+                fish += 1
+        fish += sum(1 for f in self.board.fisheries if v in f["vertices"])
+        for r, n in gains.items():
+            self.players[p]["hand"][r] += n
+        if _count(gains):
+            self._log(f"{self._name(p)} starts with {self._describe(gains)}.")
+        if gold:
+            self.pending.append({"type": "gold", "player": p, "count": gold})
+        demand = [0] * len(self.players)
+        demand[p] = fish
+        self._draw_fish(demand)
+
+    # ------------------------------------------------------------------ actions
+
+    ACTIONS = (
+        "build_settlement", "build_city", "build_road", "build_ship",
+        "roll", "end_turn", "choose_gold", "discard", "move_robber",
+    )
+
+    def act(self, p: int, action: dict) -> None:
+        if self.phase == "finished":
+            raise RuleError("The game is over.")
+        if not isinstance(action, dict) or action.get("type") not in self.ACTIONS:
+            raise RuleError("Unknown action.")
+        if p not in range(len(self.players)):
+            raise RuleError("Unknown player.")
+        getattr(self, "_act_" + action["type"])(p, action)
+        self._check_winner()
+
+    @staticmethod
+    def _int_arg(action: dict, key: str) -> int:
+        value = action.get(key)
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise RuleError(f"Missing {key}.")
+        return value
+
+    # --- setup and building
+
+    def _act_build_settlement(self, p: int, a: dict) -> None:
+        v = self._int_arg(a, "vertex")
+        if self.phase == "setup":
+            self._require(self.setup_order[self.setup_step] == p, "It's not your turn to place.")
+            self._require(not self.pending, "Something needs to be resolved first.")
+            self._require(self.setup_awaiting == "settlement", "Place your road or ship first.")
+            self._require(v in self.legal_settlements(p), "You can't build a settlement there.")
+            self.buildings[v] = {"owner": p, "kind": "settlement"}
+            self.setup_vertex = v
+            self.setup_awaiting = "route"
+            self._log(f"{self._name(p)} places a settlement.")
+            self._starting_production(p, v)
+            return
+
+        self._require_main_phase(p)
+        self._require(v in self.legal_settlements(p), "You can't build a settlement there.")
+        self._require(self._settlement_piece_available(p),
+                      "You need 5 settlements and 4 cities on the board before building more settlements.")
+        self._pay(p, COSTS["settlement"])
+        self.buildings[v] = {"owner": p, "kind": "settlement"}
+        self._log(f"{self._name(p)} builds a settlement.")
+        self._update_longest_route()
+
+    def _act_build_city(self, p: int, a: dict) -> None:
+        v = self._int_arg(a, "vertex")
+        self._require_main_phase(p)
+        self._require(v in self.legal_cities(p), "You need your own settlement there.")
+        self._require(self._city_piece_available(p),
+                      "You need 5 settlements and 4 cities on the board before building more cities.")
+        self._pay(p, COSTS["city"])
+        self.buildings[v] = {"owner": p, "kind": "city"}
+        self._log(f"{self._name(p)} builds a city.")
+
+    def _act_build_road(self, p: int, a: dict) -> None:
+        self._build_route(p, self._int_arg(a, "edge"), "road")
+
+    def _act_build_ship(self, p: int, a: dict) -> None:
+        self._build_route(p, self._int_arg(a, "edge"), "ship")
+
+    def _build_route(self, p: int, e: int, kind: str) -> None:
+        legal = self.legal_roads if kind == "road" else self.legal_ships
+        if self.phase == "setup":
+            self._require(self.setup_order[self.setup_step] == p, "It's not your turn to place.")
+            self._require(not self.pending, "Something needs to be resolved first.")
+            self._require(self.setup_awaiting == "route", "Place your settlement first.")
+            self._require(e in legal(p), f"You can't place a {kind} there.")
+            self.routes[e] = {"owner": p, "kind": kind, "turn": 0}
+            self._log(f"{self._name(p)} places a {kind}.")
+            self._advance_setup()
+            return
+
+        self._require_turn(p)
+        free = self._pending_for("free_routes", p)
+        if free is None:
+            self._require_main_phase(p)
+        self._require(e in legal(p), f"You can't build a {kind} there.")
+        if free is None:
+            self._pay(p, COSTS[kind])
+        else:
+            free["count"] -= 1
+            if free["count"] == 0:
+                self.pending.remove(free)
+        self.routes[e] = {"owner": p, "kind": kind, "turn": self.turn_number}
+        self._log(f"{self._name(p)} builds a {kind}{' for free' if free else ''}.")
+        self._update_longest_route()
+
+    def _advance_setup(self) -> None:
+        self.setup_step += 1
+        self.setup_awaiting = "settlement"
+        self.setup_vertex = None
+        if self.setup_step < len(self.setup_order):
+            self.current = self.setup_order[self.setup_step]
+            return
+        self.phase = "play"
+        self.current = self.first_player
+        self.turn_number = 1
+        self._update_longest_route()
+        self._log(f"Setup done. {self._name(self.current)} to roll.")
+
+    # --- turn flow
+
+    def _act_roll(self, p: int, a: dict) -> None:
+        self._require_turn(p)
+        self._require(not self.rolled, "You already rolled.")
+        self._require(not self.pending, "Something needs to be resolved first.")
+        self.dice = [self.rng.randint(1, 6), self.rng.randint(1, 6)]
+        self.rolled = True
+        total = sum(self.dice)
+        self._log(f"{self._name(p)} rolls {total} ({self.dice[0]}+{self.dice[1]}).")
+        if total == 7:
+            for q, player in enumerate(self.players):
+                n = _count(player["hand"])
+                if n > 7:
+                    self.pending.append({"type": "discard", "player": q, "count": n // 2})
+                    self._log(f"{self._name(q)} must discard {n // 2}.")
+            self.pending.append({"type": "robber", "player": p})
+        else:
+            self._produce(total)
+
+    def _act_end_turn(self, p: int, a: dict) -> None:
+        self._require_main_phase(p)
+        self.trade = None
+        self.current = 1 - self.current
+        self.turn_number += 1
+        self.rolled = False
+        self.ship_moved = False
+        self.dev_played = False
+        self._log(f"{self._name(self.current)}'s turn.")
+
+    def _act_choose_gold(self, p: int, a: dict) -> None:
+        item = self._pending_for("gold", p)
+        self._require(item is not None, "You have no gold to pick.")
+        cards = _clean_cards(a.get("cards"))
+        self._require(_count(cards) == item["count"], f"Pick exactly {item['count']}.")
+        for r, n in cards.items():
+            self.players[p]["hand"][r] += n
+        self.pending.remove(item)
+        self._log(f"{self._name(p)} takes {self._describe(cards)} from gold.")
+
+    def _act_discard(self, p: int, a: dict) -> None:
+        item = self._pending_for("discard", p)
+        self._require(item is not None, "You don't need to discard.")
+        cards = _clean_cards(a.get("cards"))
+        self._require(_count(cards) == item["count"], f"Discard exactly {item['count']}.")
+        hand = self.players[p]["hand"]
+        self._require(all(hand[r] >= n for r, n in cards.items()), "You don't have those cards.")
+        for r, n in cards.items():
+            hand[r] -= n
+        self.pending.remove(item)
+        self._log(f"{self._name(p)} discards {self._describe(cards)}.")
+
+    def robber_victim(self, piece: str, hex_id: int, p: int) -> int | None:
+        """The opponent who could be robbed at ``hex_id``, if any."""
+        o = 1 - p
+        if piece == "robber":
+            touching = any(
+                self.buildings.get(v, {}).get("owner") == o
+                for v in self.topo.hexes[hex_id].corners if v is not None
+            )
+        else:
+            touching = any(
+                self.routes.get(e, {}).get("owner") == o and self.routes[e]["kind"] == "ship"
+                for e in self.topo.hexes[hex_id].edges if e is not None
+            )
+        return o if touching else None
+
+    def legal_robber_hexes(self) -> list[int]:
+        return [h.id for h in self.topo.hexes
+                if not h.frame and self.board.is_land(h.id) and h.id != self.robber]
+
+    def legal_pirate_hexes(self) -> list[int]:
+        return [h.id for h in self.topo.hexes if self.board.is_sea(h.id) and h.id != self.pirate]
+
+    def _act_move_robber(self, p: int, a: dict) -> None:
+        item = self._pending_for("robber", p)
+        self._require(item is not None, "You don't need to move the robber.")
+        self._require(not any(i["type"] == "discard" for i in self.pending),
+                      "Wait for discards first.")
+        piece = a.get("piece")
+        self._require(piece in ("robber", "pirate"), "Choose the robber or the pirate.")
+        hex_id = self._int_arg(a, "hex")
+        targets = self.legal_robber_hexes() if piece == "robber" else self.legal_pirate_hexes()
+        self._require(hex_id in targets, f"The {piece} can't go there.")
+        take = a.get("take")
+        self._require(take == "steal" or take in RESOURCES, "Choose to steal or take a card.")
+
+        victim = self.robber_victim(piece, hex_id, p)
+        if take == "steal":
+            self._require(victim is not None, "Nobody to steal from there.")
+            victim_hand = self.players[victim]["hand"]
+            self._require(_count(victim_hand) > 0, f"{self._name(victim)} has no cards in hand.")
+
+        setattr(self, piece, hex_id)
+        self.pending.remove(item)
+        self._log(f"{self._name(p)} moves the {piece}.")
+        if take == "steal":
+            card = self._random_card(victim_hand)
+            victim_hand[card] -= 1
+            self.players[p]["hand"][card] += 1
+            self._log(f"{self._name(p)} steals {card} from {self._name(victim)}.")
+        else:
+            self.players[p]["hand"][take] += 1
+            self._log(f"{self._name(p)} takes {take} from the supply.")
+
+    def _random_card(self, hand: dict) -> str:
+        pool = [r for r, n in hand.items() for _ in range(n)]
+        return self.rng.choice(pool)
+
+    # ------------------------------------------------------------------ views
+
+    def legal_for(self, p: int) -> dict:
+        """Board spots where ``p`` could place things right now, for the client to highlight."""
+        legal = {}
+        if self.phase == "setup":
+            if self.setup_order[self.setup_step] == p and not self.pending:
+                if self.setup_awaiting == "settlement":
+                    legal["settlement"] = self.legal_settlements(p)
+                else:
+                    legal["road"] = self.legal_roads(p)
+                    legal["ship"] = self.legal_ships(p)
+            return legal
+        if self.phase != "play" or p != self.current:
+            return legal
+        if self._pending_for("robber", p) and not any(i["type"] == "discard" for i in self.pending):
+            legal["robber"] = self.legal_robber_hexes()
+            legal["pirate"] = self.legal_pirate_hexes()
+        if self._pending_for("free_routes", p):
+            legal["road"] = self.legal_roads(p)
+            legal["ship"] = self.legal_ships(p)
+        if not self.pending and self.rolled:
+            if self._settlement_piece_available(p):
+                legal["settlement"] = self.legal_settlements(p)
+            if self._city_piece_available(p):
+                legal["city"] = self.legal_cities(p)
+            legal["road"] = self.legal_roads(p)
+            legal["ship"] = self.legal_ships(p)
+        return legal
+
+    def view_for(self, me: int | None) -> dict:
+        players = []
+        for i, pl in enumerate(self.players):
+            s, c = self._piece_counts(i)
+            info = {
+                "colour": PLAYER_COLOURS[i],
+                "vp": self.public_vp(i),
+                "vp_needed": self.vp_needed(i),
+                "hand_count": _count(pl["hand"]),
+                "bank_count": _count(pl["bank"]),
+                "fish_count": len(pl["fish"]),
+                "dev_count": len(pl["dev"]),
+                "knights": pl["knights"],
+                "settlements": s,
+                "cities": c,
+                "route_length": self.route_length(i),
+                "longest_route": self.longest_route == i,
+                "largest_army": self.largest_army == i,
+                "boot": self.boot_holder == i,
+            }
+            if i == me or self.phase == "finished":
+                info.update({
+                    "hand": dict(pl["hand"]),
+                    "bank": dict(pl["bank"]),
+                    "fish": sorted(pl["fish"]),
+                    "dev": [dict(d) for d in pl["dev"]],
+                    "total_vp": self.total_vp(i),
+                })
+            players.append(info)
+
+        log = []
+        for entry in self.log[-60:]:
+            text = entry.get("private", {}).get(str(me), entry["text"])
+            log.append({"n": entry["n"], "text": text})
+
+        return {
+            "me": me,
+            "phase": self.phase,
+            "current": self.current,
+            "turn": self.turn_number,
+            "setup": {
+                "player": self.setup_order[self.setup_step] if self.phase == "setup" else None,
+                "awaiting": self.setup_awaiting if self.phase == "setup" else None,
+            },
+            "rolled": self.rolled,
+            "dice": self.dice,
+            "pending": [dict(i) for i in self.pending],
+            "players": players,
+            "buildings": [{"vertex": v, **b} for v, b in self.buildings.items()],
+            "routes": [{"edge": e, "owner": r["owner"], "kind": r["kind"]} for e, r in self.routes.items()],
+            "robber": self.robber,
+            "pirate": self.pirate,
+            "dev_deck": len(self.dev_deck),
+            "fish_bag": len(self.fish_bag) + len(self.fish_spent),
+            "trade": self.trade,
+            "winner": self.winner,
+            "log": log,
+            "legal": self.legal_for(me) if me is not None else {},
+            "costs": COSTS,
+        }
+
+    # ------------------------------------------------------------ persistence
+
+    _STATE_KEYS = (
+        "players", "phase", "first_player", "current", "turn_number", "setup_order",
+        "setup_step", "setup_awaiting", "setup_vertex", "rolled", "dice", "pending",
+        "robber", "pirate", "dev_deck", "fish_bag", "fish_spent", "boot_holder",
+        "longest_route", "largest_army", "ship_moved", "dev_played", "trade", "winner", "log",
+    )
+
+    def to_dict(self) -> dict:
+        d = {k: getattr(self, k) for k in self._STATE_KEYS}
+        d["buildings"] = [[v, b["owner"], b["kind"]] for v, b in self.buildings.items()]
+        d["routes"] = [[e, r["owner"], r["kind"], r["turn"]] for e, r in self.routes.items()]
+        d["board"] = self.board.to_dict()
+        return d
+
+    @classmethod
+    def from_dict(cls, d: dict, rng: random.Random | None = None) -> "Game":
+        state = {k: d[k] for k in cls._STATE_KEYS}
+        state["buildings"] = {v: {"owner": o, "kind": k} for v, o, k in d["buildings"]}
+        state["routes"] = {e: {"owner": o, "kind": k, "turn": t} for e, o, k, t in d["routes"]}
+        return cls(Board.from_dict(d["board"]), rng=rng, _state=state)
