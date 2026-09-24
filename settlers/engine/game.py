@@ -419,28 +419,34 @@ class Game:
                 self._log(f"{self._name(p)} picks {gold[p]} card{'s' if gold[p] > 1 else ''} from gold.")
         self._draw_fish(fish)
 
-    def _starting_production(self, p: int, v: int) -> None:
-        gains = _empty_cards()
-        gold = 0
-        fish = 0
-        for h in self.topo.vertices[v].hexes:
-            terrain = self.board.terrain[h]
-            if terrain in TERRAIN_RESOURCE:
-                gains[TERRAIN_RESOURCE[terrain]] += 1
-            elif terrain == GOLD:
-                gold += 1
-            elif terrain == LAKE:
-                fish += 1
-        fish += sum(1 for f in self.board.fisheries if v in f["vertices"])
-        for r, n in gains.items():
-            self.players[p]["hand"][r] += n
-        if _count(gains):
+    def _starting_production(self) -> None:
+        """At the end of setup every starting settlement gives a card per adjacent
+        producing hex (gold is picked), plus a fish token per fishing ground or lake."""
+        n_players = len(self.players)
+        fish = [0] * n_players
+        order = [self.first_player] + [q for q in range(n_players) if q != self.first_player]
+        for p in order:
+            gains = _empty_cards()
+            gold = 0
+            for v, b in self.buildings.items():
+                if b["owner"] != p:
+                    continue
+                for h in self.topo.vertices[v].hexes:
+                    terrain = self.board.terrain[h]
+                    if terrain in TERRAIN_RESOURCE:
+                        gains[TERRAIN_RESOURCE[terrain]] += 1
+                    elif terrain == GOLD:
+                        gold += 1
+                    elif terrain == LAKE:
+                        fish[p] += 1
+                fish[p] += sum(1 for f in self.board.fisheries if v in f["vertices"])
+            for r, n in gains.items():
+                self.players[p]["hand"][r] += n
             self._log(f"{self._name(p)} starts with {self._describe(gains)}.")
-        if gold:
-            self.pending.append({"type": "gold", "player": p, "count": gold})
-        demand = [0] * len(self.players)
-        demand[p] = fish
-        self._draw_fish(demand)
+            if gold:
+                self.pending.append({"type": "gold", "player": p, "count": gold})
+                self._log(f"{self._name(p)} picks {gold} card{'s' if gold > 1 else ''} from gold.")
+        self._draw_fish(fish)
 
     # ------------------------------------------------------------------ actions
 
@@ -479,7 +485,6 @@ class Game:
             self.setup_vertex = v
             self.setup_awaiting = "route"
             self._log(f"{self._name(p)} places a settlement.")
-            self._starting_production(p, v)
             return
 
         self._require_main_phase(p)
@@ -545,7 +550,8 @@ class Game:
         self.current = self.first_player
         self.turn_number = 1
         self._update_longest_route()
-        self._log(f"Setup done. {self._name(self.current)} to roll.")
+        self._log("Setup done.")
+        self._starting_production()
 
     # --- turn flow
 

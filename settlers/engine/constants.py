@@ -14,13 +14,13 @@ SEA = "sea"
 GOLD = "gold"
 LAKE = "lake"
 
-BOARD_COLS = 7
-BOARD_ROWS = 7
+BOARD_COLS = 8
+BOARD_ROWS = 8
 
 # Seafarers + base game tile set, with the three deserts replaced by the lake,
-# a third gold field and one more sea.
+# a third gold field and sea; the rest of the 8x8 rectangle is sea too.
 TILE_COUNTS = {
-    SEA: 20,
+    SEA: 35,
     "forest": 5,
     "hills": 5,
     "pasture": 5,

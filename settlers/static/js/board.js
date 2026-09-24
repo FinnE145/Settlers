@@ -114,12 +114,8 @@ function Harbour({ harbour, board }) {
 
 function Fishery({ fishery, board }) {
   const hx = board.hexes[fishery.hex];
-  const c = [px(hx.x), py(hx.y)];
-  const k = fishery.corner;
-  const outer = [k - 1, k, k + 1].map((i) => cornerPoint(hx, i));
-  const inner = outer.map((p) => lerp(c, p, 0.55)).reverse();
-  const points = [...outer, ...inner].map((p) => p.join(',')).join(' ');
-  const [tx, ty] = lerp(c, cornerPoint(hx, k), 0.3);
+  const points = fisheryPoints(board, fishery);
+  const [tx, ty] = lerp([px(hx.x), py(hx.y)], cornerPoint(hx, fishery.corner), 0.3);
   return html`<g class="fishery">
     <title>Fishing ground ${fishery.number}</title>
     <polygon points=${points} class="fishery-band" />
@@ -240,7 +236,34 @@ export function Targets({ board, kind, ids, selected, onPick }) {
   </g>`;
 }
 
-export function Board({ board, children }) {
+/** Hexes (and fisheries) that produce on ``roll``. */
+function rolledParts(board, roll) {
+  if (!roll || roll === 7) return { hexes: [], fisheries: [] };
+  const hexes = board.hexes.filter((hx) => board.numbers[hx.id] === roll
+    || (board.terrain[hx.id] === 'lake' && board.lake_numbers.includes(roll))).map((hx) => hx.id);
+  const fisheries = board.fisheries.filter((f) => f.number === roll);
+  return { hexes, fisheries };
+}
+
+function RolledHighlight({ board, roll, robber }) {
+  const { hexes, fisheries } = rolledParts(board, roll);
+  return html`<g class="rolled-layer">
+    ${hexes.map((id) => html`<polygon key=${'rh' + id} points=${hexPoints(board.hexes[id])}
+      class=${id === robber ? 'rolled blocked' : 'rolled'} />`)}
+    ${fisheries.map((f) => html`<polygon key=${'rf' + f.hex} points=${fisheryPoints(board, f)} class="rolled" />`)}
+  </g>`;
+}
+
+function fisheryPoints(board, fishery) {
+  const hx = board.hexes[fishery.hex];
+  const c = [px(hx.x), py(hx.y)];
+  const k = fishery.corner;
+  const outer = [k - 1, k, k + 1].map((i) => cornerPoint(hx, i));
+  const inner = outer.map((p) => lerp(c, p, 0.55)).reverse();
+  return [...outer, ...inner].map((p) => p.join(',')).join(' ');
+}
+
+export function Board({ board, roll = null, robber = null, children }) {
   const [vx, vy, vw, vh] = boardBounds(board);
   return html`<svg class="board" viewBox="${vx} ${vy} ${vw} ${vh}" xmlns="http://www.w3.org/2000/svg">
     <${Patterns} />
@@ -258,6 +281,7 @@ export function Board({ board, children }) {
     })}
     ${board.fisheries.map((f) => html`<${Fishery} key=${'f' + f.hex} fishery=${f} board=${board} />`)}
     ${board.harbours.map((hb) => html`<${Harbour} key=${'h' + hb.edge} harbour=${hb} board=${board} />`)}
+    <${RolledHighlight} board=${board} roll=${roll} robber=${robber} />
     ${board.hexes.map((hx) => {
       const n = board.numbers[hx.id];
       if (n != null) return html`<${NumberToken} key=${'n' + hx.id} x=${px(hx.x)} y=${py(hx.y)} n=${n} />`;

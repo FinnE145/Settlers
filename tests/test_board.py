@@ -5,6 +5,8 @@ import pytest
 
 from settlers.engine.board import Board, generate_board
 from settlers.engine.constants import (
+    BOARD_COLS,
+    BOARD_ROWS,
     FISHERY_NUMBERS,
     HARBOURS,
     LAKE,
@@ -17,11 +19,11 @@ from settlers.engine.topology import get_topology
 
 @pytest.fixture(scope="module")
 def topo():
-    return get_topology(7, 7)
+    return get_topology(BOARD_COLS, BOARD_ROWS)
 
 
 def test_topology_shape(topo):
-    assert len(topo.inner_hexes) == 49
+    assert len(topo.inner_hexes) == BOARD_COLS * BOARD_ROWS == sum(TILE_COUNTS.values())
     for h in topo.inner_hexes:
         assert None not in h.corners
         assert None not in h.edges

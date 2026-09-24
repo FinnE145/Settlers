@@ -35,14 +35,13 @@ def run_setup(game):
         assert game.current == p
         v = game.legal_settlements(p)[0]
         act(game, p, "build_settlement", vertex=v)
-        gold = game._pending_for("gold", p)
-        if gold:
-            act(game, p, "choose_gold", cards={"ore": gold["count"]})
         legal = game.legal_for(p)
         if legal.get("road"):
             act(game, p, "build_road", edge=legal["road"][0])
         else:
             act(game, p, "build_ship", edge=legal["ship"][0])
+    for item in list(game.pending):
+        act(game, item["player"], "choose_gold", cards={"ore": item["count"]})
 
 
 def test_setup_snake_order_and_start_of_play():
@@ -72,40 +71,59 @@ def test_setup_rules_enforced():
         act(game, 1, "build_settlement", vertex=H.corners[1])  # distance rule
 
 
-def test_every_starting_settlement_produces_cards_and_fish():
-    sea = hex_at(3, 2)
-    v = H.corners[0]  # shared by H and the two hexes above it
-    others = [h for h in TOPO.vertices[v].hexes if h != H.id]
+def land_edge(game, v):
+    return next(e for e in TOPO.vertices[v].edges if game._edge_touches_land(e))
+
+
+def place_setup(game, vertices):
+    """Place the four starting settlements (in setup order) with a road each."""
+    for step, v in enumerate(vertices):
+        p = game.setup_order[step]
+        act(game, p, "build_settlement", vertex=v)
+        act(game, p, "build_road", edge=land_edge(game, v))
+
+
+def test_starting_cards_and_fish_arrive_after_setup():
+    v1 = H.corners[0]  # shared by H and the two hexes above it
+    others = [h for h in TOPO.vertices[v1].hexes if h != H.id]
+    sea = hex_at(5, 6)
     fishery = {"hex": sea.id, "corner": 0, "number": 4,
                "vertices": [sea.corners[5], sea.corners[0], sea.corners[1]]}
-    board = make_board(terrain={H.id: "forest", others[0]: "hills", others[1]: "lake"},
-                       numbers={H.id: 5, others[0]: 6})
+    board = make_board(terrain={H.id: "forest", others[0]: "hills", others[1]: "lake", sea.id: "sea"},
+                       numbers={H.id: 5, others[0]: 6}, fisheries=[fishery])
     game = make_game(board, play=False)
-    game.fish_bag = [1] * 10
-    act(game, 0, "build_settlement", vertex=v)  # first settlement also produces
-    assert game.players[0]["hand"]["wood"] == 1
-    assert game.players[0]["hand"]["brick"] == 1
-    assert game.players[0]["fish"] == [1]  # from the lake
+    game.fish_bag = [1] * 20
+    blue = [hex_at(0, 7).corners[3], hex_at(7, 0).corners[0]]
+    act(game, 0, "build_settlement", vertex=v1)
+    assert sum(game.players[0]["hand"].values()) == 0  # nothing until setup ends
+    act(game, 0, "build_road", edge=land_edge(game, v1))
+    for v in blue:
+        act(game, 1, "build_settlement", vertex=v)
+        act(game, 1, "build_road", edge=land_edge(game, v))
+    act(game, 0, "build_settlement", vertex=sea.corners[0])
+    assert game.players[0]["fish"] == []
+    act(game, 0, "build_road", edge=land_edge(game, sea.corners[0]))
 
-    # A settlement on a fishing ground draws a token too.
-    game2 = make_game(make_board(fisheries=[fishery]), play=False)
-    game2.fish_bag = [3] * 10
-    act(game2, 0, "build_settlement", vertex=sea.corners[0])
-    assert game2.players[0]["fish"] == [3]
+    assert game.phase == "play"
+    assert game.players[0]["hand"] == {"wood": 1, "brick": 1, "sheep": 2, "wheat": 0, "ore": 0}
+    assert game.players[0]["fish"] == [1, 1]  # lake + fishing ground
+    assert game.players[1]["hand"]["sheep"] == 2
 
 
-def test_gold_at_start_needs_a_choice():
-    v = H.corners[0]
+def test_starting_gold_is_picked_before_the_first_roll():
     board = make_board(terrain={H.id: "gold"}, numbers={H.id: 8})
     game = make_game(board, play=False)
-    act(game, 0, "build_settlement", vertex=v)
+    place_setup(game, [H.corners[0], hex_at(0, 7).corners[3], hex_at(7, 0).corners[0],
+                       hex_at(0, 0).corners[0]])
+    assert game._pending_for("gold", 0)["count"] == 1
     with pytest.raises(RuleError):
-        act(game, 0, "build_road", edge=H.edges[0])  # pick gold first
+        act(game, 0, "roll")
     with pytest.raises(RuleError):
         act(game, 0, "choose_gold", cards={"ore": 2})
     act(game, 0, "choose_gold", cards={"ore": 1})
     assert game.players[0]["hand"]["ore"] == 1
-    act(game, 0, "build_road", edge=H.edges[0])
+    game.rng.roll(1, 2)
+    act(game, 0, "roll")
 
 
 # ------------------------------------------------------------ production

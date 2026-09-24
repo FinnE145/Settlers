@@ -3,11 +3,11 @@
 import random
 
 from settlers.engine.board import Board
-from settlers.engine.constants import RESOURCES, SEA
+from settlers.engine.constants import BOARD_COLS, BOARD_ROWS, RESOURCES, SEA
 from settlers.engine.game import Game
 from settlers.engine.topology import get_topology
 
-TOPO = get_topology(7, 7)
+TOPO = get_topology(BOARD_COLS, BOARD_ROWS)
 
 
 class Dice(random.Random):
@@ -38,7 +38,7 @@ def make_board(default="pasture", terrain=None, numbers=None, fisheries=None, ha
     n = [None] * len(TOPO.hexes)
     for hid, num in (numbers or {}).items():
         n[hid] = num
-    return Board(7, 7, t, n, harbours or [], fisheries or [])
+    return Board(BOARD_COLS, BOARD_ROWS, t, n, harbours or [], fisheries or [])
 
 
 def make_game(board=None, rng=None, play=True):

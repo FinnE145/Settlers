@@ -11,8 +11,8 @@ Seafarers ship rules and the Fishermen fish rules, with the house rules below.
 
 ## Board
 
-- A 7×7 rectangle of pointy-top hexes (odd rows offset), surrounded by a sea frame.
-- Tiles: 20 sea, 5 each of forest, hills, pasture, fields and mountains, 3 gold fields
+- An 8×8 rectangle of pointy-top hexes (odd rows offset), surrounded by a sea frame.
+- Tiles: 35 sea, 5 each of forest, hills, pasture, fields and mountains, 3 gold fields
   and 1 lake. There are no deserts.
 - Placement is fully random. The only constraint is that the lake touches at least
   3 land hexes (any non-sea hex counts as land).
@@ -43,8 +43,9 @@ city = 2 wheat + 3 ore, development card = sheep + wheat + ore.
 
 - Snake order (A, B, B, A). Each placement is a settlement plus a road, or a ship if the
   settlement is on the coast. Starting settlements may go anywhere legal.
-- Each starting settlement (first and second) gives one card from every adjacent producing
-  hex (gold: your choice), plus one fish token for each fishing ground or lake it touches.
+- When all placements are done, each starting settlement (first and second) gives one card
+  from every adjacent producing hex (gold: your choice), plus one fish token for each fishing
+  ground or lake it touches. Gold picks are made then, before the first roll.
 - The robber and the pirate start off the board.
 
 ## Turn
