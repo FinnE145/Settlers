@@ -2,7 +2,7 @@
 import { h } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import htm from 'htm';
-import { BackCluster, BootIcon, CardStack, FishToken, PieceIcon, ResCard, VPToken } from './icons.js';
+import { BackCluster, BootIcon, CardStack, DevCard, FishToken, PieceIcon, ResCard, VPToken } from './icons.js';
 import { RESOURCES } from './ui.js';
 
 const html = htm.bind(h);
@@ -55,7 +55,9 @@ export function OpponentBar({ game, p }) {
     </span>
     <span class="group" title="Fish tokens"><${FishToken} size=${26} /><b>×${info.fish_count}</b></span>
     ${info.boot && html`<${BootIcon} size=${26} />`}
-    <${Stat} label="Dev" value=${info.dev_count} title="Development cards in hand" />
+    <span class="group small-group" title="Development cards">
+      <${BackCluster} n=${info.dev_count} w=${20} label="Development cards" dev /><span class="group-label">dev</span>
+    </span>
     <${Stat} label="Knights" value=${info.knights} title="Knights played" />
     <${Stat} label="Route" value=${info.route_length} title="Longest trade route length" />
     <${Badges} info=${info} />
@@ -81,39 +83,66 @@ function useRecentGains(hand) {
   return gained;
 }
 
-export function PlayerBar({ game, p }) {
+/** Your development cards, grouped; playable ones are buttons. */
+function DevCards({ dev, playable, onPlay }) {
+  if (!dev.length) return null;
+  const groups = {};
+  for (const d of dev) {
+    const key = d.card + (d.new ? ':new' : '');
+    groups[key] = groups[key] || { card: d.card, isNew: d.new, n: 0 };
+    groups[key].n += 1;
+  }
+  return html`<div class="dev-cards">
+    ${Object.entries(groups).map(([key, g]) => {
+      const can = !g.isNew && playable.includes(g.card);
+      const title = g.card === 'victory_point' ? 'Victory point (counts automatically)'
+        : g.isNew ? 'Got this turn: playable from next turn' : can ? 'Click to play' : 'Not playable right now';
+      return html`<button key=${key} class=${'card-btn dev' + (g.isNew ? ' new' : '')} disabled=${!can}
+        title=${title} onClick=${() => onPlay(g.card)}>
+        <${DevCard} card=${g.card} count=${g.n} dim=${g.isNew} w=${36} />
+      </button>`;
+    })}
+  </div>`;
+}
+
+export function PlayerBar({ game, p, onPlayDev, onBank, onFish, canFish }) {
   const info = game.players[p];
   const colour = COLOURS[p];
   const gained = useRecentGains(info.hand);
   const held = RESOURCES.filter((r) => info.hand[r] > 0);
   const banked = RESOURCES.filter((r) => info.bank[r] > 0);
+  const canBank = game.phase === 'play' && game.pending.length === 0 && info.hand_count > 0;
   return html`<div class=${`bar bottom pc-${colour}${isActive(game, p) ? ' active' : ''}`}>
     <div class="hand">
       ${held.length
         ? held.map((r) => html`<span key=${r} class=${gained.includes(r) ? 'gained' : ''}>
-            <${CardStack} res=${r} n=${info.hand[r]} /></span>`)
+            <${CardStack} res=${r} n=${info.hand[r]} w=${40} /></span>`)
         : html`<span class="muted">No cards in hand</span>`}
     </div>
-    <div class="bank" title="Your bank (only the count is visible to your opponent)">
+    <${DevCards} dev=${info.dev} playable=${game.playable_dev} onPlay=${onPlayDev} />
+    <button class="bank area-btn" disabled=${!canBank} onClick=${onBank}
+        title="Your bank: click to put cards in (your opponent only sees the count)">
       <div class="group-label">Bank</div>
       <div class="bank-cards">
         ${banked.length
           ? banked.map((r) => html`<${ResCard} key=${r} res=${r} count=${info.bank[r]} w=${24} />`)
           : html`<span class="muted small">empty</span>`}
       </div>
-    </div>
-    <div class="fish" title="Your fish tokens">
+    </button>
+    <button class="fish area-btn" disabled=${!canFish} onClick=${onFish}
+        title="Your fish tokens: click to spend them on your turn">
       ${info.fish.length
         ? info.fish.map((v, i) => html`<${FishToken} key=${i} value=${v} size=${28} />`)
         : html`<span class="muted small">No fish</span>`}
       ${info.boot && html`<${BootIcon} size=${28} />`}
-    </div>
+    </button>
     <div class="mine-stats">
-      <${Stat} label="Knights" value=${info.knights} />
-      <${Stat} label="Route" value=${info.route_length} />
+      <${PieceSupply} info=${info} colour=${colour} size=${18} />
+      <div>
+        <${Stat} label="Knights" value=${info.knights} /> · <${Stat} label="Route" value=${info.route_length} />
+      </div>
       <${Badges} info=${info} />
     </div>
-    <${PieceSupply} info=${info} colour=${colour} />
     <span class="vp" title=${info.total_vp !== info.vp ? `${info.vp} public + ${info.total_vp - info.vp} hidden` : 'Victory points'}>
       <${VPToken} size=${40} /><b>${info.total_vp}</b><span class="vp-of">/${info.vp_needed}</span>
     </span>

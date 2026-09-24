@@ -65,10 +65,10 @@ export function CardStack({ res, n, w = 44 }) {
   </span>`;
 }
 
-export function CardBack({ w = 30 }) {
+export function CardBack({ w = 30, dev = false }) {
   const hgt = Math.round(w * 1.4);
   return html`<svg width=${w} height=${hgt} viewBox=${`0 0 ${w} ${hgt}`} class="card">
-    <rect x="1" y="1" width=${w - 2} height=${hgt - 2} rx="4" class="card-back" />
+    <rect x="1" y="1" width=${w - 2} height=${hgt - 2} rx="4" class=${dev ? 'card-back dev-back' : 'card-back'} />
     <rect x="3.5" y="3.5" width=${w - 7} height=${hgt - 7} rx="2.5" class="card-back-inner" />
     <polygon points=${hexagon(w / 2, hgt / 2, w * 0.22)} class="card-back-emblem" />
   </svg>`;
@@ -82,13 +82,13 @@ function hexagon(cx, cy, r) {
 }
 
 /** A fanned cluster of card backs with a number over it. */
-export function BackCluster({ n, w = 30, label }) {
+export function BackCluster({ n, w = 30, label, dev = false }) {
   const shown = Math.min(Math.max(n, 1), 3);
   const hgt = Math.round(w * 1.4);
   return html`<span class=${'cluster' + (n === 0 ? ' empty' : '')} title=${label}
       style=${{ width: `${w + (shown - 1) * 7}px`, height: `${hgt}px` }}>
     ${Array.from({ length: shown }, (_, i) => html`<span key=${i} class="stack-layer"
-      style=${{ left: `${i * 7}px`, transform: `rotate(${(i - (shown - 1) / 2) * 7}deg)` }}><${CardBack} w=${w} /></span>`)}
+      style=${{ left: `${i * 7}px`, transform: `rotate(${(i - (shown - 1) / 2) * 7}deg)` }}><${CardBack} w=${w} dev=${dev} /></span>`)}
     <span class="cluster-n">${n}</span>
   </span>`;
 }
@@ -148,5 +148,35 @@ export function BootIcon({ size = 30 }) {
     <title>Old boot: needs 1 more VP to win</title>
     <circle cx="15" cy="15" r="13.5" class="boot-bg" />
     <path d="M10 6 H17 V16 L23 18 Q25 19 24 22 H8 V18 Z" class="boot-glyph" />
+  </svg>`;
+}
+
+const DEV_SYMBOL = {
+  knight: html`<path d="M12 3 L19 6 V12 Q19 18 12 21 Q5 18 5 12 V6 Z" class="dev-sym" />
+    <path d="M12 7 V17 M8.5 11 H15.5" class="dev-line" />`,
+  road_building: html`<rect x="4" y="6" width="16" height="4" rx="1.5" class="dev-sym" />
+    <rect x="4" y="14" width="16" height="4" rx="1.5" class="dev-sym" />`,
+  year_of_plenty: html`<text x="12" y="16.5" class="dev-text">+2</text>`,
+  monopoly: html`<path d="M4 18 L5 8 L9 12 L12 5 L15 12 L19 8 L20 18 Z" class="dev-sym" />`,
+  victory_point: html`<polygon points=${star(12, 12, 9, 4)} class="dev-sym" />`,
+};
+
+export const DEV_LABEL = {
+  knight: 'Knight', road_building: 'Roads', year_of_plenty: 'Plenty',
+  monopoly: 'Monopoly', victory_point: 'VP',
+};
+
+/** A development card face with a short name and an optional count badge. */
+export function DevCard({ card, count, w = 42, dim = false }) {
+  const hgt = Math.round(w * 1.4);
+  const g = Math.round(w * 0.62);
+  return html`<svg width=${w} height=${hgt} viewBox=${`0 0 ${w} ${hgt}`} class=${'card' + (dim ? ' dim' : '')}>
+    <rect x="1" y="1" width=${w - 2} height=${hgt - 2} rx="5" class="dev-face" />
+    <svg x=${(w - g) / 2} y="6" width=${g} height=${g} viewBox="0 0 24 24">${DEV_SYMBOL[card]}</svg>
+    <text x=${w / 2} y=${hgt - 7} class="dev-name">${DEV_LABEL[card]}</text>
+    ${count != null && count > 1 && html`<g>
+      <circle cx=${w - 9} cy="10" r="8" class="card-badge" />
+      <text x=${w - 9} y="10.5" class="card-badge-text">${count}</text>
+    </g>`}
   </svg>`;
 }

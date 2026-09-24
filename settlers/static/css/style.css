@@ -157,7 +157,8 @@ svg.board { width: 100%; height: auto; display: block; }
   background: #efe9dc; border: 0 solid var(--border);
 }
 .bar.top { grid-column: 1; grid-row: 1; border-bottom-width: 1px; min-height: 64px; }
-.bar.bottom { grid-column: 1; grid-row: 3; border-top-width: 1px; min-height: 104px; }
+.bar.bottom { grid-column: 1; grid-row: 3; border-top-width: 1px; min-height: 96px; flex-wrap: wrap; row-gap: 6px; }
+.bar > * { flex-shrink: 0; }
 .bar.active.pc-red { box-shadow: inset 0 0 0 3px var(--red); background: #f7e4e0; }
 .bar.active.pc-blue { box-shadow: inset 0 0 0 3px var(--blue); background: #e3e8f6; }
 .bar-name { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; }
@@ -170,11 +171,11 @@ svg.board { width: 100%; height: auto; display: block; }
 .vp.small { font-size: 1.2em; }
 .vp-of { font-size: 0.55em; color: var(--muted); align-self: flex-end; margin-bottom: 0.3em; }
 
-.hand { display: flex; align-items: flex-end; gap: 10px; min-width: 200px; }
+.hand { display: flex; align-items: flex-end; gap: 8px; min-width: 160px; }
 .bank { display: flex; flex-direction: column; gap: 2px; }
 .bank-cards { display: flex; gap: 3px; min-height: 34px; align-items: center; }
 .fish { display: flex; flex-wrap: wrap; gap: 2px; max-width: 170px; align-items: center; }
-.mine-stats { display: flex; flex-direction: column; gap: 2px; }
+.mine-stats { display: flex; flex-direction: column; gap: 3px; font-size: 0.9em; }
 .muted.small { font-size: 0.8em; }
 
 .supply { display: inline-flex; flex-direction: column; gap: 1px; }
@@ -301,3 +302,56 @@ button.steal { display: block; margin-bottom: 4px; }
   0% { box-shadow: 0 0 0 4px #ffeb3b; transform: translateY(-6px); }
   100% { box-shadow: 0 0 0 0 rgba(255, 235, 59, 0); transform: none; }
 }
+
+/* ---- Trades, fish shop, dev cards ---- */
+.popup.wide { min-width: 460px; }
+.popup-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.popup-head .popup-title { margin: 0; }
+button.close { border: 0; background: none; font-size: 1.4em; line-height: 1; padding: 0 4px; color: var(--muted); }
+.trade { display: flex; flex-direction: column; gap: 6px; }
+.trade-side { border-top: 1px solid #e6dfcf; padding-top: 6px; }
+.trade-label { font-weight: 700; font-size: 0.85em; color: #555; margin: 2px 0; display: inline-flex; gap: 6px; align-items: center; }
+.fish-request, .fish-choose { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 4px; }
+.fish-req { display: inline-flex; align-items: center; gap: 3px; }
+.token-btn { padding: 1px; border: 2px solid transparent; border-radius: 50%; background: none; }
+.token-btn.on { border-color: #2e5e8e; background: #dce8f5; }
+.card-btn.pick { border: 3px solid transparent; }
+.card-btn.pick.on { border-color: #2e5e8e; }
+.rate { font-size: 0.85em; font-weight: 700; height: 1.2em; }
+.offer-row { display: flex; align-items: center; gap: 10px; margin: 4px 0; }
+.offer-row .trade-label { width: 64px; }
+.offer-side { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.fish-items { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; margin: 8px 0; }
+.fish-item { display: grid; grid-template-columns: 22px 1fr auto 1.5em auto; align-items: center; gap: 4px; }
+.fish-item.unavailable { opacity: 0.45; }
+.price {
+  display: inline-block; min-width: 20px; text-align: center; border-radius: 10px;
+  background: var(--fishwater); border: 1px solid #1d5f99; font-weight: 700; font-size: 0.85em;
+}
+.warn { color: #b26a00; font-weight: 600; }
+.actions-panel { display: flex; flex-direction: column; gap: 6px; }
+
+.dev-cards { display: flex; gap: 4px; align-items: flex-end; }
+.card-btn.dev:disabled { cursor: default; }
+.card-btn.dev:not(:disabled) { box-shadow: 0 0 0 2px #2e5e8e; border-radius: 6px; }
+.dev-face { fill: #efe4f7; stroke: #6a4c93; stroke-width: 1.2; }
+.dev-sym { fill: #6a4c93; }
+.dev-line { stroke: #efe4f7; stroke-width: 2; fill: none; }
+.dev-text { font-size: 11px; font-weight: 800; fill: #6a4c93; text-anchor: middle; }
+.dev-name { font-size: 7.5px; font-weight: 700; fill: #3d2a58; text-anchor: middle; }
+.card-back.dev-back { fill: #6a4c93; }
+
+.area-btn {
+  background: none; border: 1px dashed transparent; border-radius: 8px; padding: 2px 4px;
+  font: inherit; text-align: left;
+}
+.area-btn:hover:not(:disabled) { border-color: #9b8d70; background: rgba(255, 255, 255, 0.5); }
+.area-btn:disabled { opacity: 1; cursor: default; }
+
+@media (max-width: 1150px) {
+  .table { grid-template-columns: minmax(0, 1fr) 250px; }
+  .bar { gap: 10px; padding: 6px 8px; }
+  .side { padding: 8px; }
+}
+.final { display: flex; flex-direction: column; gap: 4px; min-width: 220px; }
+.final-row { display: flex; gap: 8px; align-items: baseline; font-size: 1.1em; }
