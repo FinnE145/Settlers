@@ -359,3 +359,7 @@ button.close { border: 0; background: none; font-size: 1.4em; line-height: 1; pa
 .target.edge.either { fill: rgba(255, 255, 255, 0.55); stroke: #9fd0ff; stroke-width: 2; }
 .coast-choice { display: flex; flex-direction: column; gap: 4px; }
 .coast-choice .toggle { margin-bottom: 0; }
+.name-field { display: inline-flex; align-items: center; gap: 4px; }
+.name-field input { font: inherit; padding: 3px 6px; width: 9em; }
+.actions { flex-wrap: wrap; align-items: center; }
+.setup .board-wrap svg.board { max-height: calc(100vh - 150px); width: auto; max-width: 100%; margin: 0 auto; }

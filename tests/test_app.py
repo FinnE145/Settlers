@@ -178,3 +178,10 @@ def test_large_bodies_are_refused(app):
     c = client(app)
     res = c.post("/api/action", data="x" * (70 * 1024), content_type="application/json")
     assert res.status_code == 413
+
+
+def test_names_at_creation(app):
+    host = client(app)
+    assert post(host, "/api/game", {"colour": "blue", "names": ["Sam", "sam"]}).status_code == 400
+    view = post(host, "/api/game", {"colour": "blue", "names": ["Sam", "Finn"]}).get_json()
+    assert view["game"]["names"] == ["Sam", "Finn"]

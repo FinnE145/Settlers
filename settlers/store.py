@@ -112,7 +112,7 @@ class GameStore:
         if self.game is not None:
             raise RuleError("A game is already running.")
 
-    def create_game(self, colour: str) -> str:
+    def create_game(self, colour: str, names: list[str] | None = None) -> str:
         """Start a game on the previewed board. Returns the creator's player token."""
         if colour not in PLAYER_COLOURS:
             raise RuleError("Pick red or blue.")
@@ -120,7 +120,7 @@ class GameStore:
             self._require_no_game()
             board = self.get_pending_board()
             first = random.SystemRandom().randrange(len(PLAYER_COLOURS))
-            self.game = Game(board, first_player=first)
+            self.game = Game(board, first_player=first, names=names)
             self.creator = PLAYER_COLOURS.index(colour)
             token = secrets.token_urlsafe(24)
             self.seats = {token: self.creator}

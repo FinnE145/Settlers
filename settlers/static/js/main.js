@@ -8,10 +8,25 @@ import { LinkBox } from './ui.js';
 
 const html = htm.bind(h);
 
+// Remember the last names typed on this device (a convenience; fine if storage is blocked).
+function savedNames() {
+  try {
+    const names = JSON.parse(localStorage.getItem('settlers-names'));
+    if (Array.isArray(names) && names.length === 2) return names.map(String);
+  } catch { /* ignore */ }
+  return ['', ''];
+}
+
 function SetupScreen({ onCreated, onError }) {
   const [board, setBoard] = useState(null);
   const [colour, setColour] = useState('red');
+  const [names, setNames] = useState(savedNames);
   const [busy, setBusy] = useState(false);
+  const setName = (i, value) => setNames(names.map((n, j) => (j === i ? value : n)));
+  const create = async () => {
+    try { localStorage.setItem('settlers-names', JSON.stringify(names)); } catch { /* ignore */ }
+    onCreated(await api('POST', '/api/game', { colour, names }));
+  };
 
   const run = async (fn) => {
     setBusy(true);
@@ -29,14 +44,17 @@ function SetupScreen({ onCreated, onError }) {
       <button disabled=${busy}
         onClick=${() => run(async () => setBoard((await api('POST', '/api/setup/regenerate')).board))}>
         Regenerate</button>
-      <span class="colour-pick">Play as
-        ${['red', 'blue'].map((c) => html`<label key=${c}>
+      ${['red', 'blue'].map((c, i) => html`<label key=${c} class="name-field">
+        <span class=${'swatch p-' + c}></span>
+        <input type="text" maxlength="20" placeholder=${c === 'red' ? 'Red' : 'Blue'}
+          value=${names[i]} onInput=${(e) => setName(i, e.target.value)} />
+      </label>`)}
+      <span class="colour-pick">You are
+        ${['red', 'blue'].map((c, i) => html`<label key=${c}>
           <input type="radio" name="colour" checked=${colour === c} onChange=${() => setColour(c)} />
-          <span class=${'swatch p-' + c}></span>${c}</label>`)}
+          ${names[i].trim() || (c === 'red' ? 'Red' : 'Blue')}</label>`)}
       </span>
-      <button class="primary" disabled=${busy || !board}
-        onClick=${() => run(async () => onCreated(await api('POST', '/api/game', { colour })))}>
-        Create game</button>
+      <button class="primary" disabled=${busy || !board} onClick=${() => run(create)}>Create game</button>
     </div>
   </main>`;
 }

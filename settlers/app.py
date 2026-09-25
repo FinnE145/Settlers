@@ -144,7 +144,7 @@ def create_app(store: GameStore | None = None, allowed_networks: str | None = No
     @app.post("/api/game")
     def create_game():
         body = json_body()
-        seat_token = store.create_game(body.get("colour"))
+        seat_token = store.create_game(body.get("colour"), body.get("names"))
         view = store.session_view(seat_token, request.host_url)
         return with_seat_cookie(make_response(jsonify(view)), seat_token)
 

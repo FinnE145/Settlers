@@ -519,3 +519,35 @@ def test_unknown_or_malformed_actions():
                 {"type": "choose_gold", "cards": {"gold": 1}}, "roll", None):
         with pytest.raises(RuleError):
             game.act(0, bad)
+
+
+# ------------------------------------------------------------------ names
+
+
+def test_names_are_cleaned():
+    from settlers.engine.game import clean_names
+
+    assert clean_names(None) == ["Red", "Blue"]
+    assert clean_names(["  Finn  ", ""]) == ["Finn", "Blue"]
+    assert clean_names(["A{0}b", "x" * 50]) == ["A0b", "x" * 20]
+    assert clean_names(["Sam\u0007  Lee", "Jo"]) == ["Sam Lee", "Jo"]
+    for bad in (["Sam", "sam"], ["Sam"], "Sam", [1, 2]):
+        with pytest.raises(RuleError):
+            clean_names(bad)
+
+
+def test_log_refers_to_players_by_placeholder():
+    game = Game(make_board(), first_player=1, rng=Dice(), names=["Ann", "Bo"])
+    assert game.log[0]["text"] == "{1} places first."
+    view = game.view_for(0)
+    assert view["names"] == ["Ann", "Bo"]
+
+
+def test_error_messages_use_real_names():
+    game = make_game(Game(make_board(), rng=Dice(), names=["Ann", "Bo"]).board)
+    game.names = ["Ann", "Bo"]
+    game.rolled = True
+    place(game, 1, H.corners[3])
+    game.pending.append({"type": "robber", "player": 0})
+    with pytest.raises(RuleError, match="Bo has no cards"):
+        act(game, 0, "move_robber", piece="robber", hex=H.id, take="steal")

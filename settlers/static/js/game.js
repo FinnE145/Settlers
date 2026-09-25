@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import htm from 'htm';
 import { Board, Pieces, Targets } from './board.js';
 import { api } from './api.js';
-import { NAMES, OpponentBar, PlayerBar } from './hud.js';
+import { COLOURS, OpponentBar, PlayerBar } from './hud.js';
 import { Die, ResGlyph } from './icons.js';
 import {
   CardSelect, DepositPopup, FishPopup, MonopolyPopup, MyOfferPopup, OfferPopup, Popup,
@@ -29,7 +29,7 @@ const LABEL = { road: 'Road', ship: 'Ship', settlement: 'Settlement', city: 'Cit
 const canAfford = (hand, cost) => Object.entries(cost).every(([r, n]) => hand[r] >= n);
 
 function promptText(game, me) {
-  if (game.phase === 'finished') return game.winner === me ? 'You win!' : `${NAMES[game.winner]} wins.`;
+  if (game.phase === 'finished') return game.winner === me ? 'You win!' : `${game.names[game.winner]} wins.`;
   const discardsWaiting = game.pending.some((p) => p.type === 'discard');
   const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
   for (const p of game.pending.filter((q) => q.player === me)) {
@@ -39,12 +39,12 @@ function promptText(game, me) {
     if (p.type === 'free_routes') return `Place ${p.count} free ${p.count === 1 ? 'road or ship' : 'roads or ships'}.`;
   }
   const other = game.pending.find((p) => p.player !== me);
-  if (other) return `Waiting for ${NAMES[other.player]}…`;
+  if (other) return `Waiting for ${game.names[other.player]}…`;
   if (game.phase === 'setup') {
-    if (game.setup.player !== me) return `${NAMES[game.setup.player]} is placing.`;
+    if (game.setup.player !== me) return `${game.names[game.setup.player]} is placing.`;
     return game.setup.awaiting === 'settlement' ? 'Place a settlement.' : 'Place a road or ship next to it.';
   }
-  if (game.current !== me) return `${NAMES[game.current]}'s turn.`;
+  if (game.current !== me) return `${game.names[game.current]}'s turn.`;
   return game.rolled ? 'Your turn.' : 'Your turn: roll the dice.';
 }
 
@@ -78,12 +78,13 @@ function BuildButtons({ game, me, mode, setMode, kinds, free }) {
   </div>`;
 }
 
-function Log({ entries }) {
+/** Log lines refer to players as {0} and {1}; show their names in their colours. */
+function Log({ entries, names }) {
   const ref = useRef(null);
   useEffect(() => { if (ref.current) ref.current.scrollTop = ref.current.scrollHeight; }, [entries.length]);
   return html`<div class="log" ref=${ref}>
-    ${entries.map((e) => html`<div key=${e.n}>${e.text.split(/\b(Red|Blue)\b/).map((part, i) =>
-      (i % 2 ? html`<b class=${'name-' + part.toLowerCase()}>${part}</b>` : part))}</div>`)}
+    ${entries.map((e) => html`<div key=${e.n}>${e.text.split(/\{(\d)\}/).map((part, i) =>
+      (i % 2 ? html`<b class=${'name-' + COLOURS[+part]}>${names[+part]}</b>` : part))}</div>`)}
   </div>`;
 }
 
@@ -180,10 +181,10 @@ export function GameScreen({ session, onError }) {
 
   let popup = null;
   if (game.phase === 'finished') {
-    popup = html`<${Popup} title=${game.winner === me ? 'You win!' : `${NAMES[game.winner]} wins`}>
+    popup = html`<${Popup} title=${game.winner === me ? 'You win!' : `${game.names[game.winner]} wins`}>
       <div class="final">
         ${game.players.map((p, i) => html`<div key=${i} class=${'final-row name-' + p.colour}>
-          <b>${NAMES[i]}</b> <span>${p.vp} VP</span>
+          <b>${game.names[i]}</b> <span>${p.vp} VP</span>
         </div>`)}
       </div>
       <div class="popup-actions">
@@ -285,7 +286,7 @@ export function GameScreen({ session, onError }) {
       ${!mainPhase && tradeWindow && !game.trade && html`<div class="build">
         <button onClick=${() => setPanel({ kind: 'trade' })}>Propose a trade…</button>
       </div>`}
-      <${Log} entries=${game.log} />
+      <${Log} entries=${game.log} names=${game.names} />
       <details class="links">
         <summary>Game</summary>
         <${LinkBox} label="Your link (to rejoin from another device)" url=${session.my_link} />

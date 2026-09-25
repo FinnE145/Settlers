@@ -5,7 +5,7 @@ Seafarers ship rules and the Fishermen fish rules, with the house rules below.
 
 ## Players and winning
 
-- 2 players, red and blue. The starting player is chosen at random.
+- 2 players, red and blue, named by the game creator. The starting player is chosen at random.
 - The first player to have **14 VP during their own turn** wins (15 while holding the old boot).
 - VP: settlement 1, city 2, each victory point card played 1, and 1 for each title:
   longest trade route, largest army, harbourmaster and master fisherman.

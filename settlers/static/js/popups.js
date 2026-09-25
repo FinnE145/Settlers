@@ -3,7 +3,6 @@ import { h } from 'preact';
 import { useState } from 'preact/hooks';
 import htm from 'htm';
 import { FishToken, ResCard } from './icons.js';
-import { NAMES } from './hud.js';
 import { RESOURCES, emptyCards, total } from './ui.js';
 
 const html = htm.bind(h);
@@ -78,7 +77,7 @@ export function RobberPopup({ board, game, me, piece, setPiece, hex, send }) {
       ? html`<p class="muted">Click a highlighted hex on the board.</p>`
       : html`<div>
           ${victim && html`<button class="primary steal" disabled=${oppCards === 0} onClick=${() => move('steal')}>
-            Steal a random card from ${NAMES[1 - me]} (${oppCards})</button>`}
+            Steal a random card from ${game.names[1 - me]} (${oppCards})</button>`}
           <div class="muted small-gap">${victim ? 'or take' : 'Take'} one from the supply:</div>
           <div class="select-row">
             ${RESOURCES.map((r) => html`<button key=${r} class="card-btn" onClick=${() => move(r)}>
@@ -143,12 +142,12 @@ function PlayerTrade({ game, me, initial, send, onClose }) {
       <${FishChooser} fish=${mine.fish} chosen=${giveFish} onChange=${setGiveFish} />
     </div>
     <div class="trade-side">
-      <div class="trade-label">You want from ${NAMES[1 - me]}</div>
+      <div class="trade-label">You want from ${game.names[1 - me]}</div>
       <${CardPicker} value=${get} onChange=${setGet} />
       <${FishRequest} value=${getFish} onChange=${setGetFish} />
     </div>
     <div class="popup-actions">
-      <button class="primary" disabled=${!giveOk || !getOk} onClick=${offer}>Offer to ${NAMES[1 - me]}</button>
+      <button class="primary" disabled=${!giveOk || !getOk} onClick=${offer}>Offer to ${game.names[1 - me]}</button>
     </div>
   </div>`;
 }
@@ -187,7 +186,7 @@ export function TradePopup({ game, me, initial, send, onClose }) {
   const canUseSupply = game.current === me;
   return html`<${Popup} title="Trade" onClose=${onClose} wide>
     <div class="toggle">
-      <button class=${tab === 'player' ? 'active' : ''} onClick=${() => setTab('player')}>With ${NAMES[1 - me]}</button>
+      <button class=${tab === 'player' ? 'active' : ''} onClick=${() => setTab('player')}>With ${game.names[1 - me]}</button>
       ${canUseSupply && html`<button class=${tab === 'bank' ? 'active' : ''} onClick=${() => setTab('bank')}>
         With the supply</button>`}
     </div>
@@ -213,7 +212,7 @@ export function OfferPopup({ game, me, send, onCounter }) {
   const counts = fishCounts(mine.fish);
   const need = fishCounts(t.get_fish);
   const haveFish = [1, 2, 3].every((v) => counts[v] >= need[v]);
-  return html`<${Popup} title=${`${NAMES[t.from]} offers a trade`}>
+  return html`<${Popup} title=${`${game.names[t.from]} offers a trade`}>
     <div class="offer-row"><span class="trade-label">You get</span><${Side} cards=${t.give} fish=${t.give_fish} /></div>
     <div class="offer-row"><span class="trade-label">You give</span><${Side} cards=${t.get} fish=${t.get_fish} /></div>
     ${!(haveCards && haveFish) && html`<div class="muted">You don't have what they're asking for.</div>`}
@@ -227,7 +226,7 @@ export function OfferPopup({ game, me, send, onCounter }) {
 
 export function MyOfferPopup({ game, send }) {
   const t = game.trade;
-  return html`<${Popup} title=${`Waiting for ${NAMES[1 - t.from]}…`}>
+  return html`<${Popup} title=${`Waiting for ${game.names[1 - t.from]}…`}>
     <div class="offer-row"><span class="trade-label">You give</span><${Side} cards=${t.give} fish=${t.give_fish} /></div>
     <div class="offer-row"><span class="trade-label">You get</span><${Side} cards=${t.get} fish=${t.get_fish} /></div>
     <div class="popup-actions"><button onClick=${() => send({ type: 'cancel_trade' })}>Withdraw offer</button></div>

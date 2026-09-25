@@ -73,9 +73,33 @@ def _clean_cards(cards) -> dict:
     return out
 
 
+NAME_MAX = 20
+
+
+def clean_names(names) -> list[str]:
+    """Player names from the game creator: trimmed, printable, no braces (they mark
+    placeholders in log text), at most NAME_MAX characters, and different from each other.
+    A missing or blank name falls back to the colour."""
+    defaults = [c.capitalize() for c in PLAYER_COLOURS]
+    if names is None:
+        return defaults
+    if not isinstance(names, list) or len(names) != len(PLAYER_COLOURS):
+        raise RuleError("Give a name for each player.")
+    out = []
+    for name, default in zip(names, defaults):
+        if not isinstance(name, str):
+            raise RuleError("Names must be text.")
+        name = "".join(ch for ch in name if ch.isprintable() and ch not in "{}")
+        name = " ".join(name.split())[:NAME_MAX].strip()
+        out.append(name or default)
+    if len({n.casefold() for n in out}) != len(out):
+        raise RuleError("Give the players different names.")
+    return out
+
+
 class Game:
     def __init__(self, board: Board, first_player: int = 0, rng: random.Random | None = None,
-                 _state: dict | None = None):
+                 names: list[str] | None = None, _state: dict | None = None):
         self.rng = rng or random.SystemRandom()
         self.board = board
         self.topo = board.topology
@@ -84,6 +108,7 @@ class Game:
             self.route_lengths = [self.route_length(p) for p in range(len(self.players))]
             return
 
+        self.names = clean_names(names)
         self.players = [_new_player() for _ in PLAYER_COLOURS]
         self.phase = "setup"  # setup | play | finished
         self.first_player = first_player
@@ -117,13 +142,18 @@ class Game:
         self.trade = None
         self.winner = None
         self.log: list[dict] = []
-        self._log(f"{self._name(first_player)} places first.")
+        self._log(f"{self._who(first_player)} places first.")
 
     # ------------------------------------------------------------------ helpers
 
+    def _name(self, p: int) -> str:
+        """The player's name, for messages shown directly to a player."""
+        return self.names[p]
+
     @staticmethod
-    def _name(p: int) -> str:
-        return PLAYER_COLOURS[p].capitalize()
+    def _who(p: int) -> str:
+        """A placeholder for a player in log text; the client shows the name in colour."""
+        return "{%d}" % p
 
     def _log(self, text: str, private: dict | None = None) -> None:
         entry = {"n": len(self.log), "text": text}
@@ -374,7 +404,7 @@ class Game:
             if new is None:
                 self._log("Nobody holds the longest trade route now.")
             else:
-                self._log(f"{self._name(new)} takes the longest trade route ({lengths[new]}).")
+                self._log(f"{self._who(new)} takes the longest trade route ({lengths[new]}).")
 
     def public_vp(self, p: int) -> int:
         """Victory points everyone can see. Unplayed VP cards don't count yet."""
@@ -399,7 +429,7 @@ class Game:
             self.winner = p
             self.pending = []
             self.trade = None
-            self._log(f"{self._name(p)} wins with {self.public_vp(p)} VP!")
+            self._log(f"{self._who(p)} wins with {self.public_vp(p)} VP!")
 
     # ------------------------------------------------------------------ fish
 
@@ -424,14 +454,14 @@ class Game:
                 token = self._take_fish_token()
                 if token == BOOT:
                     self.boot_holder = p
-                    self._log(f"{self._name(p)} fished up the old boot!")
+                    self._log(f"{self._who(p)} fished up the old boot!")
                 else:
                     self.players[p]["fish"].append(token)
                     drawn.append(token)
             if drawn:
                 values = ", ".join(str(t) for t in drawn)
                 self._log(
-                    f"{self._name(p)} draws {len(drawn)} fish token{'s' if len(drawn) > 1 else ''}.",
+                    f"{self._who(p)} draws {len(drawn)} fish token{'s' if len(drawn) > 1 else ''}.",
                     private={p: f"You draw fish token{'s' if len(drawn) > 1 else ''}: {values}."},
                 )
 
@@ -486,10 +516,10 @@ class Game:
             if _count(gains[p]):
                 for r, n in gains[p].items():
                     self.players[p]["hand"][r] += n
-                self._log(f"{self._name(p)} gets {self._describe(gains[p])}.")
+                self._log(f"{self._who(p)} gets {self._describe(gains[p])}.")
             if gold[p]:
                 self.pending.append({"type": "gold", "player": p, "count": gold[p]})
-                self._log(f"{self._name(p)} picks {gold[p]} card{'s' if gold[p] > 1 else ''} from gold.")
+                self._log(f"{self._who(p)} picks {gold[p]} card{'s' if gold[p] > 1 else ''} from gold.")
         self._draw_fish(fish)
 
     def _starting_production(self) -> None:
@@ -515,10 +545,10 @@ class Game:
                 fish[p] += sum(1 for f in self.board.fisheries if v in f["vertices"])
             for r, n in gains.items():
                 self.players[p]["hand"][r] += n
-            self._log(f"{self._name(p)} starts with {self._describe(gains)}.")
+            self._log(f"{self._who(p)} starts with {self._describe(gains)}.")
             if gold:
                 self.pending.append({"type": "gold", "player": p, "count": gold})
-                self._log(f"{self._name(p)} picks {gold} card{'s' if gold > 1 else ''} from gold.")
+                self._log(f"{self._who(p)} picks {gold} card{'s' if gold > 1 else ''} from gold.")
         self._draw_fish(fish)
 
     # ------------------------------------------------------------------ actions
@@ -559,7 +589,7 @@ class Game:
             self.buildings[v] = {"owner": p, "kind": "settlement"}
             self.setup_vertex = v
             self.setup_awaiting = "route"
-            self._log(f"{self._name(p)} places a settlement.")
+            self._log(f"{self._who(p)} places a settlement.")
             return
 
         self._require_main_phase(p)
@@ -568,7 +598,7 @@ class Game:
                       "You need 5 settlements and 4 cities on the board before building more settlements.")
         self._pay(p, COSTS["settlement"])
         self.buildings[v] = {"owner": p, "kind": "settlement"}
-        self._log(f"{self._name(p)} builds a settlement.")
+        self._log(f"{self._who(p)} builds a settlement.")
         self._update_longest_route()
         self._update_building_titles()
 
@@ -580,7 +610,7 @@ class Game:
                       "You need 5 settlements and 4 cities on the board before building more cities.")
         self._pay(p, COSTS["city"])
         self.buildings[v] = {"owner": p, "kind": "city"}
-        self._log(f"{self._name(p)} builds a city.")
+        self._log(f"{self._who(p)} builds a city.")
 
     def _act_build_road(self, p: int, a: dict) -> None:
         self._build_route(p, self._int_arg(a, "edge"), "road")
@@ -596,7 +626,7 @@ class Game:
             self._require(self.setup_awaiting == "route", "Place your settlement first.")
             self._require(e in legal(p), f"You can't place a {kind} there.")
             self.routes[e] = {"owner": p, "kind": kind, "turn": 0}
-            self._log(f"{self._name(p)} places a {kind}.")
+            self._log(f"{self._who(p)} places a {kind}.")
             self.route_lengths = [self.route_length(q) for q in range(len(self.players))]
             self._advance_setup()
             return
@@ -613,7 +643,7 @@ class Game:
             if free["count"] == 0:
                 self.pending.remove(free)
         self.routes[e] = {"owner": p, "kind": kind, "turn": self.turn_number}
-        self._log(f"{self._name(p)} builds a {kind}{' for free' if free else ''}.")
+        self._log(f"{self._who(p)} builds a {kind}{' for free' if free else ''}.")
         self._update_longest_route()
 
     def _advance_setup(self) -> None:
@@ -640,13 +670,13 @@ class Game:
         self.dice = [self.rng.randint(1, 6), self.rng.randint(1, 6)]
         self.rolled = True
         total = sum(self.dice)
-        self._log(f"{self._name(p)} rolls {total} ({self.dice[0]}+{self.dice[1]}).")
+        self._log(f"{self._who(p)} rolls {total} ({self.dice[0]}+{self.dice[1]}).")
         if total == 7:
             for q, player in enumerate(self.players):
                 n = _count(player["hand"])
                 if n > 7:
                     self.pending.append({"type": "discard", "player": q, "count": n // 2})
-                    self._log(f"{self._name(q)} must discard {n // 2}.")
+                    self._log(f"{self._who(q)} must discard {n // 2}.")
             self.pending.append({"type": "robber", "player": p})
         else:
             self._produce(total)
@@ -659,7 +689,7 @@ class Game:
         self.rolled = False
         self.ship_moved = False
         self.dev_played = False
-        self._log(f"{self._name(self.current)}'s turn.")
+        self._log(f"{self._who(self.current)}'s turn.")
 
     def _act_choose_gold(self, p: int, a: dict) -> None:
         item = self._pending_for("gold", p)
@@ -669,7 +699,7 @@ class Game:
         for r, n in cards.items():
             self.players[p]["hand"][r] += n
         self.pending.remove(item)
-        self._log(f"{self._name(p)} takes {self._describe(cards)} from gold.")
+        self._log(f"{self._who(p)} takes {self._describe(cards)} from gold.")
 
     def _act_discard(self, p: int, a: dict) -> None:
         item = self._pending_for("discard", p)
@@ -681,7 +711,7 @@ class Game:
         for r, n in cards.items():
             hand[r] -= n
         self.pending.remove(item)
-        self._log(f"{self._name(p)} discards {self._describe(cards)}.")
+        self._log(f"{self._who(p)} discards {self._describe(cards)}.")
 
     def robber_victim(self, piece: str, hex_id: int, p: int) -> int | None:
         """The opponent who could be robbed at ``hex_id``, if any."""
@@ -726,15 +756,15 @@ class Game:
 
         setattr(self, piece, hex_id)
         self.pending.remove(item)
-        self._log(f"{self._name(p)} moves the {piece}.")
+        self._log(f"{self._who(p)} moves the {piece}.")
         if take == "steal":
             card = self._random_card(victim_hand)
             victim_hand[card] -= 1
             self.players[p]["hand"][card] += 1
-            self._log(f"{self._name(p)} steals {card} from {self._name(victim)}.")
+            self._log(f"{self._who(p)} steals {card} from {self._who(victim)}.")
         else:
             self.players[p]["hand"][take] += 1
-            self._log(f"{self._name(p)} takes {take} from the supply.")
+            self._log(f"{self._who(p)} takes {take} from the supply.")
 
     def _random_card(self, hand: dict) -> str:
         pool = [r for r, n in hand.items() for _ in range(n)]
@@ -783,7 +813,7 @@ class Game:
         rate = self.trade_rates(p)[give][get]
         self._pay(p, {give: rate})
         self.players[p]["hand"][get] += 1
-        self._log(f"{self._name(p)} trades {rate} {give} for 1 {get}.")
+        self._log(f"{self._who(p)} trades {rate} {give} for 1 {get}.")
 
     # --- trading between players
 
@@ -827,7 +857,7 @@ class Game:
         self._require(self._has_cards(p, give), "You don't have those cards.")
         self._require(self._has_fish(p, give_fish), "You don't have those fish tokens.")
         self.trade = {"from": p, "give": give, "get": get, "give_fish": give_fish, "get_fish": get_fish}
-        self._log(f"{self._name(p)} offers {self._describe_side(give, give_fish)} "
+        self._log(f"{self._who(p)} offers {self._describe_side(give, give_fish)} "
                   f"for {self._describe_side(get, get_fish)}.")
 
     def _act_accept_trade(self, p: int, a: dict) -> None:
@@ -847,24 +877,24 @@ class Game:
         self.players[p]["fish"] += t["give_fish"]
         self.players[o]["fish"] += t["get_fish"]
         self.trade = None
-        self._log(f"{self._name(p)} accepts the trade.")
+        self._log(f"{self._who(p)} accepts the trade.")
 
     def _act_decline_trade(self, p: int, a: dict) -> None:
         self._require(self.trade is not None and self.trade["from"] != p, "There's no offer to decline.")
         self.trade = None
-        self._log(f"{self._name(p)} declines the trade.")
+        self._log(f"{self._who(p)} declines the trade.")
 
     def _act_cancel_trade(self, p: int, a: dict) -> None:
         self._require(self.trade is not None and self.trade["from"] == p, "You have no open offer.")
         self.trade = None
-        self._log(f"{self._name(p)} withdraws the offer.")
+        self._log(f"{self._who(p)} withdraws the offer.")
 
     # --- development cards
 
     def _draw_dev(self, p: int) -> None:
         card = self.dev_deck.pop()
         self.players[p]["dev"].append({"card": card, "turn": self.turn_number})
-        self._log(f"{self._name(p)} gets a development card.",
+        self._log(f"{self._who(p)} gets a development card.",
                   private={p: f"You get a development card: {DEV_NAMES[card]}."})
 
     def _act_buy_dev(self, p: int, a: dict) -> None:
@@ -896,7 +926,7 @@ class Game:
             self._require(entry is not None, "You don't have that card.")
             dev.remove(entry)
             self.players[p]["vp_cards"] += 1
-            self._log(f"{self._name(p)} plays a victory point card.")
+            self._log(f"{self._who(p)} plays a victory point card.")
             return
         self._require(not self.dev_played, "You've already played a development card this turn.")
         entry = next((d for d in dev if d["card"] == card and d["turn"] < self.turn_number), None)
@@ -912,22 +942,22 @@ class Game:
         self.dev_played = True
         if card == "knight":
             self.players[p]["knights"] += 1
-            self._log(f"{self._name(p)} plays a knight.")
+            self._log(f"{self._who(p)} plays a knight.")
             self._update_largest_army()
             self.pending.append({"type": "robber", "player": p})
         elif card == "road_building":
-            self._log(f"{self._name(p)} plays road building.")
+            self._log(f"{self._who(p)} plays road building.")
             self._add_free_routes(p, 2)
         elif card == "year_of_plenty":
             for r, n in cards.items():
                 self.players[p]["hand"][r] += n
-            self._log(f"{self._name(p)} plays year of plenty: {self._describe(cards)}.")
+            self._log(f"{self._who(p)} plays year of plenty: {self._describe(cards)}.")
         else:
             o = 1 - p
             n = self.players[o]["hand"][res]
             self.players[o]["hand"][res] = 0
             self.players[p]["hand"][res] += n
-            self._log(f"{self._name(p)} plays monopoly on {res} and takes {n}.")
+            self._log(f"{self._who(p)} plays monopoly on {res} and takes {n}.")
 
     def _update_count_title(self, attr: str, counts: list[int], minimum: int, label: str) -> None:
         """Titles that go to the first player to reach ``minimum`` and move only when
@@ -938,7 +968,7 @@ class Game:
                 continue
             if holder is None or n > counts[holder]:
                 setattr(self, attr, q)
-                self._log(f"{self._name(q)} becomes {label}.")
+                self._log(f"{self._who(q)} becomes {label}.")
 
     def _update_largest_army(self) -> None:
         self._update_count_title("largest_army", [pl["knights"] for pl in self.players],
@@ -977,7 +1007,7 @@ class Game:
         item = self._pending_for("free_routes", p)
         self._require(item is not None, "You have no free roads or ships.")
         self.pending.remove(item)
-        self._log(f"{self._name(p)} skips {item['count']} free road/ship.")
+        self._log(f"{self._who(p)} skips {item['count']} free road/ship.")
 
     # --- fish
 
@@ -1014,28 +1044,28 @@ class Game:
 
         self._take_fish(p, tokens)
         self.fish_spent += tokens
-        self._log(f"{self._name(p)} spends {paid} fish.")
+        self._log(f"{self._who(p)} spends {paid} fish.")
         if kinds["bank"]:
             n = _count(me["bank"])
             for r in RESOURCES:
                 me["hand"][r] += me["bank"][r]
                 me["bank"][r] = 0
-            self._log(f"{self._name(p)} takes {n} card{'s' if n > 1 else ''} out of the bank.")
+            self._log(f"{self._who(p)} takes {n} card{'s' if n > 1 else ''} out of the bank.")
         if kinds["remove_robber"]:
             self.robber = None
-            self._log(f"{self._name(p)} removes the robber.")
+            self._log(f"{self._who(p)} removes the robber.")
         if kinds["remove_pirate"]:
             self.pirate = None
-            self._log(f"{self._name(p)} removes the pirate.")
+            self._log(f"{self._who(p)} removes the pirate.")
         for _ in range(kinds["steal"]):
             card = self._random_card(opp["hand"])
             opp["hand"][card] -= 1
             me["hand"][card] += 1
-            self._log(f"{self._name(p)} steals {card} from {self._name(o)}.")
+            self._log(f"{self._who(p)} steals {card} from {self._who(o)}.")
         if _count(wanted):
             for r, n in wanted.items():
                 me["hand"][r] += n
-            self._log(f"{self._name(p)} takes {self._describe(wanted)}.")
+            self._log(f"{self._who(p)} takes {self._describe(wanted)}.")
         for _ in range(kinds["dev_card"]):
             self._draw_dev(p)
         if kinds["route"]:
@@ -1053,7 +1083,7 @@ class Game:
         for r, k in cards.items():
             self.players[p]["hand"][r] -= k
             self.players[p]["bank"][r] += k
-        self._log(f"{self._name(p)} banks {n} card{'s' if n > 1 else ''}.")
+        self._log(f"{self._who(p)} banks {n} card{'s' if n > 1 else ''}.")
 
     # --- old boot
 
@@ -1067,7 +1097,7 @@ class Game:
         self._require(self.public_vp(1 - p) > self.public_vp(p),
                       "You can only pass the boot to a player with more VP.")
         self.boot_holder = 1 - p
-        self._log(f"{self._name(p)} passes the old boot to {self._name(1 - p)}.")
+        self._log(f"{self._who(p)} passes the old boot to {self._who(1 - p)}.")
 
     # --- moving ships
 
@@ -1101,7 +1131,7 @@ class Game:
         self._require(dst in self.legal_ships(p, ignore=src), "The ship can't go there.")
         self.routes[dst] = self.routes.pop(src)
         self.ship_moved = True
-        self._log(f"{self._name(p)} moves a ship.")
+        self._log(f"{self._who(p)} moves a ship.")
         self._update_longest_route()
 
     # ------------------------------------------------------------------ views
@@ -1179,6 +1209,7 @@ class Game:
 
         return {
             "me": me,
+            "names": self.names,
             "phase": self.phase,
             "current": self.current,
             "turn": self.turn_number,
@@ -1216,10 +1247,10 @@ class Game:
         "setup_step", "setup_awaiting", "setup_vertex", "rolled", "dice", "pending",
         "robber", "pirate", "dev_deck", "fish_bag", "fish_spent", "boot_holder",
         "longest_route", "largest_army", "harbourmaster", "master_fisherman",
-        "ship_moved", "dev_played", "trade", "winner", "log",
+        "ship_moved", "dev_played", "trade", "winner", "log", "names",
     )
     # Keys added after games may already have been saved, with their starting values.
-    _STATE_DEFAULTS = {"harbourmaster": None, "master_fisherman": None}
+    _STATE_DEFAULTS = {"harbourmaster": None, "master_fisherman": None, "names": ["Red", "Blue"]}
 
     def to_dict(self) -> dict:
         d = {k: getattr(self, k) for k in self._STATE_KEYS}

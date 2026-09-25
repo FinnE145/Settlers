@@ -6,7 +6,6 @@ import { BackCluster, BootIcon, CardStack, DevCard, FishToken, PieceIcon, ResCar
 import { RESOURCES } from './ui.js';
 
 const html = htm.bind(h);
-export const NAMES = ['Red', 'Blue'];
 export const COLOURS = ['red', 'blue'];
 const SETTLEMENTS = 5;
 const CITIES = 4;
@@ -55,7 +54,8 @@ export function OpponentBar({ game, p }) {
   const info = game.players[p];
   const colour = COLOURS[p];
   return html`<div class=${`bar top pc-${colour}${isActive(game, p) ? ' active' : ''}`}>
-    <span class="bar-name"><span class=${'swatch p-' + colour}></span>${NAMES[p]}</span>
+    <span class="bar-name"><span class=${'swatch p-' + colour}></span>
+      <span class=${'name-' + colour}>${game.names[p]}</span></span>
     <span class="group" title="Cards in hand"><${BackCluster} n=${info.hand_count} w=${30} label="Cards in hand" /></span>
     <span class="group small-group" title="Cards in bank">
       <${BackCluster} n=${info.bank_count} w=${20} label="Cards in bank" /><span class="group-label">bank</span>
