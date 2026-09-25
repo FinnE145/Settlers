@@ -50,12 +50,25 @@ function Stat({ label, value, title }) {
   return html`<span class="stat" title=${title}><span class="stat-label">${label}</span> <b>${value}</b></span>`;
 }
 
+/** Knights, route, harbours and fish buildings as a 2×2 grid. */
+function Stats({ info, whose }) {
+  return html`<div class="stat-grid">
+    <${Stat} label="Knights" value=${info.knights} title="Knights played" />
+    <${Stat} label="Route" value=${info.route_length} title="Longest trade route length" />
+    <${Stat} label="Harbours" value=${info.harbours} title=${`Harbours with ${whose} settlements or cities`} />
+    <${Stat} label="On fish" value=${info.fish_buildings} title="Settlements and cities on fish" />
+  </div>`;
+}
+
 export function OpponentBar({ game, p }) {
   const info = game.players[p];
   const colour = COLOURS[p];
   return html`<div class=${`bar top pc-${colour}${isActive(game, p) ? ' active' : ''}`}>
-    <span class="bar-name"><span class=${'swatch p-' + colour}></span>
-      <span class=${'name-' + colour}>${game.names[p]}</span></span>
+    <div class="bar-id">
+      <span class="bar-name"><span class=${'swatch p-' + colour}></span>
+        <span class=${'name-' + colour}>${game.names[p]}</span></span>
+      <${Badges} info=${info} />
+    </div>
     <span class="group" title="Cards in hand"><${BackCluster} n=${info.hand_count} w=${30} label="Cards in hand" /></span>
     <span class="group small-group" title="Cards in bank">
       <${BackCluster} n=${info.bank_count} w=${20} label="Cards in bank" /><span class="group-label">bank</span>
@@ -65,11 +78,7 @@ export function OpponentBar({ game, p }) {
     <span class="group small-group" title="Development cards">
       <${BackCluster} n=${info.dev_count} w=${20} label="Development cards" dev /><span class="group-label">dev</span>
     </span>
-    <${Stat} label="Knights" value=${info.knights} title="Knights played" />
-    <${Stat} label="Route" value=${info.route_length} title="Longest trade route length" />
-    <${Stat} label="Harbours" value=${info.harbours} title="Harbours with their settlements or cities" />
-    <${Stat} label="On fish" value=${info.fish_buildings} title="Settlements and cities on fish" />
-    <${Badges} info=${info} />
+    <${Stats} info=${info} whose="their" />
     <${PieceSupply} info=${info} colour=${colour} size=${16} />
     <span class="vp small" title="Victory points (public)">
       <${VPToken} size=${28} /><b>${info.vp}</b><span class="vp-of">/${info.vp_needed}</span>
@@ -146,17 +155,14 @@ export function PlayerBar({ game, p, onPlayDev, onBank, onFish, canFish }) {
       ${info.boot && html`<${BootIcon} size=${28} />`}
     </button>
     <div class="mine-stats">
-      <${PieceSupply} info=${info} colour=${colour} size=${18} />
-      <div>
-        <${Stat} label="Knights" value=${info.knights} /> · <${Stat} label="Route" value=${info.route_length} />
-      </div>
-      <div>
-        <${Stat} label="Harbours" value=${info.harbours} /> · <${Stat} label="On fish" value=${info.fish_buildings} />
-      </div>
+      <${Stats} info=${info} whose="your" />
       <${Badges} info=${info} />
     </div>
-    <span class="vp" title="Victory points">
-      <${VPToken} size=${40} /><b>${info.vp}</b><span class="vp-of">/${info.vp_needed}</span>
-    </span>
+    <div class="score">
+      <span class="vp" title="Victory points">
+        <${VPToken} size=${40} /><b>${info.vp}</b><span class="vp-of">/${info.vp_needed}</span>
+      </span>
+      <${PieceSupply} info=${info} colour=${colour} size=${18} />
+    </div>
   </div>`;
 }

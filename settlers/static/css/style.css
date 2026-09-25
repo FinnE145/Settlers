@@ -143,6 +143,7 @@ svg.board { width: 100%; height: auto; display: block; }
   grid-template-columns: minmax(0, 1fr) 290px;
   grid-template-rows: auto minmax(0, 1fr) auto;
   height: 100vh;
+  height: 100dvh;
 }
 .board-area { grid-column: 1; grid-row: 2; position: relative; min-height: 0; padding: 4px; }
 .board-area svg.board { width: 100%; height: 100%; }
@@ -156,16 +157,18 @@ svg.board { width: 100%; height: auto; display: block; }
   display: flex; align-items: center; gap: 14px; padding: 6px 12px;
   background: #efe9dc; border: 0 solid var(--border);
 }
-.bar.top { grid-column: 1; grid-row: 1; border-bottom-width: 1px; min-height: 64px; }
+.bar.top { grid-column: 1; grid-row: 1; border-bottom-width: 1px; min-height: 64px; flex-wrap: wrap; row-gap: 6px; }
 .bar.bottom { grid-column: 1; grid-row: 3; border-top-width: 1px; min-height: 96px; flex-wrap: wrap; row-gap: 6px; }
 .bar > * { flex-shrink: 0; }
 .bar.active.pc-red { box-shadow: inset 0 0 0 3px var(--red); background: #f7e4e0; }
 .bar.active.pc-blue { box-shadow: inset 0 0 0 3px var(--blue); background: #e3e8f6; }
 .bar-name { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; }
+.bar-id { display: flex; flex-direction: column; gap: 3px; max-width: 220px; }
 .group { display: inline-flex; align-items: center; gap: 4px; }
 .small-group { flex-direction: column; gap: 0; }
 .group-label { font-size: 0.75em; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .stat { font-size: 0.9em; white-space: nowrap; }
+.stat-grid { display: grid; grid-template-columns: auto auto; gap: 1px 10px; }
 .stat-label { color: var(--muted); }
 .vp { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; font-size: 1.6em; }
 .vp.small { font-size: 1.2em; }
@@ -174,8 +177,11 @@ svg.board { width: 100%; height: auto; display: block; }
 .hand { display: flex; align-items: flex-end; gap: 8px; min-width: 160px; }
 .bank { display: flex; flex-direction: column; gap: 2px; }
 .bank-cards { display: flex; gap: 3px; min-height: 34px; align-items: center; }
-.fish { display: flex; flex-wrap: wrap; gap: 2px; max-width: 170px; align-items: center; }
-.mine-stats { display: flex; flex-direction: column; gap: 3px; font-size: 0.9em; }
+.fish { display: flex; flex-wrap: wrap; gap: 2px; max-width: 150px; align-items: center; }
+.bar > .fish { flex: 1 1 96px; }
+.mine-stats { display: flex; flex-direction: column; gap: 4px; max-width: 180px; }
+.score { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.score .vp { margin-left: 0; }
 .muted.small { font-size: 0.8em; }
 
 .supply { display: inline-flex; flex-direction: column; gap: 1px; }
@@ -234,10 +240,10 @@ svg.board { width: 100%; height: auto; display: block; }
 /* ---- Side panel ---- */
 .prompt { font-weight: 700; font-size: 1.1em; padding: 8px; border-radius: 8px; background: #f3efe6; }
 .prompt.mine { background: #fff3c4; border: 1px solid #e0c160; }
-.dice-box { display: flex; align-items: center; gap: 8px; }
+.turn-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.dice-box { display: flex; align-items: center; gap: 6px; }
 .dice-box.stale { opacity: 0.45; }
-.dice-total { font-size: 1.8em; font-weight: 700; margin-left: 4px; }
-.turn-buttons { display: flex; gap: 8px; }
+.dice-total { font-size: 1.7em; font-weight: 700; margin-left: 2px; }
 button.big { font-size: 1.05em; padding: 0.55em 1.1em; }
 .build { display: flex; flex-wrap: wrap; gap: 6px; }
 .build-btn { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 2px; }
@@ -261,12 +267,15 @@ button.danger { color: var(--red); border-color: #e0b4b4; }
 .popup-anchor {
   position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%);
   z-index: 5; max-width: calc(100% - 20px);
+  /* A pop-up taller than the board scrolls inside, with its title bar kept in view. */
+  max-height: calc(100% - 20px); display: flex; flex-direction: column;
 }
 .popup-head { cursor: grab; touch-action: none; user-select: none; }
 .popup-head:active { cursor: grabbing; }
 .popup {
   background: #fffdf8; border: 1px solid #b9ad94; border-radius: 10px; padding: 10px 14px;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.3);
+  min-height: 0; overflow-y: auto;
 }
 .popup-title { font-weight: 700; margin-bottom: 8px; }
 .popup-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 8px; }
@@ -307,7 +316,10 @@ button.steal { display: block; margin-bottom: 4px; }
 
 /* ---- Trades, fish shop, dev cards ---- */
 .popup.wide { min-width: 460px; }
-.popup-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.popup-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  position: sticky; top: 0; z-index: 1; background: #fffdf8; margin-top: -10px; padding: 10px 0 8px;
+}
 .popup-head .popup-title { margin: 0; }
 button.close { border: 0; background: none; font-size: 1.4em; line-height: 1; padding: 0 4px; color: var(--muted); }
 .trade { display: flex; flex-direction: column; gap: 6px; }
@@ -350,10 +362,13 @@ button.close { border: 0; background: none; font-size: 1.4em; line-height: 1; pa
 .area-btn:hover:not(:disabled) { border-color: #9b8d70; background: rgba(255, 255, 255, 0.5); }
 .area-btn:disabled { opacity: 1; cursor: default; }
 
-@media (max-width: 1150px) {
+@media (max-width: 1200px) {
   .table { grid-template-columns: minmax(0, 1fr) 250px; }
   .bar { gap: 10px; padding: 6px 8px; }
-  .side { padding: 8px; }
+  .bar.top, .bar.bottom { grid-column: 1 / 3; }
+  .bar.bottom { min-height: 0; }
+  .side { grid-row: 2; padding: 8px; overflow-y: auto; }
+  .log { min-height: 60px; }
 }
 .final { display: flex; flex-direction: column; gap: 4px; min-width: 220px; }
 .final-row { display: flex; gap: 8px; align-items: baseline; font-size: 1.1em; }
@@ -364,7 +379,7 @@ button.close { border: 0; background: none; font-size: 1.4em; line-height: 1; pa
 .name-field { display: inline-flex; align-items: center; gap: 4px; }
 .name-field input { font: inherit; padding: 3px 6px; width: 9em; }
 .actions { flex-wrap: wrap; align-items: center; }
-.setup .board-wrap svg.board { max-height: calc(100vh - 150px); width: auto; max-width: 100%; margin: 0 auto; }
+.setup .board-wrap svg.board { max-height: calc(100vh - 150px); max-height: calc(100dvh - 150px); width: auto; max-width: 100%; margin: 0 auto; }
 .harbour-builder { margin-top: 4px; }
 .conversions { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .conversion {

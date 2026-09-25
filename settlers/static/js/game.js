@@ -53,7 +53,7 @@ function promptText(game, me) {
 function Dice({ dice, current }) {
   if (!dice) return html`<div class="dice-box muted">No roll yet</div>`;
   return html`<div class=${'dice-box' + (current ? '' : ' stale')}>
-    <${Die} value=${dice[0]} /><${Die} value=${dice[1]} />
+    <${Die} value=${dice[0]} size=${36} /><${Die} value=${dice[1]} size=${36} />
     <span class="dice-total">${dice[0] + dice[1]}</span>
   </div>`;
 }
@@ -320,8 +320,8 @@ export function GameScreen({ session, onError }) {
 
     <aside class="side">
       <div class=${'prompt' + (myMove ? ' mine' : '')}>${promptText(game, me)}</div>
-      <${Dice} dice=${game.dice} current=${game.rolled} />
-      <div class="turn-buttons">
+      <div class="turn-row">
+        <${Dice} dice=${game.dice} current=${game.rolled} />
         ${myTurn && !game.rolled && html`<button class="primary big" disabled=${game.pending.length > 0}
           onClick=${() => send({ type: 'roll' })}>Roll dice</button>`}
         ${mainPhase && html`<button class="big" onClick=${() => send({ type: 'end_turn' })}>End turn</button>`}
