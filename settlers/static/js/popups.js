@@ -187,10 +187,10 @@ function PlayerTrade({ game, me, initial, send, onClose }) {
   const forFee = minus(mine.hand, cardsIn);
   const forHarbour = minus(mine.hand, give);
 
-  const giveOk = total(give) > 0 || giveFish.length > 0;
-  const getOk = total(get) > 0 || fishList(getFish).length > 0;
   const usingHarbour = conversions.length > 0;
-  const ok = !usingHarbour ? giveOk && getOk : harbourUser === me ? giveOk : getOk;
+  // Either side may be empty (a gift), but not the whole offer.
+  const ok = total(give) > 0 || giveFish.length > 0 || total(get) > 0 || fishList(getFish).length > 0
+    || usingHarbour;
   const offer = () => send({
     type: 'offer_trade', give, get,
     give_fish: giveFish.map((i) => mine.fish[i]), get_fish: fishList(getFish),
@@ -219,8 +219,6 @@ function PlayerTrade({ game, me, initial, send, onClose }) {
           <${ConversionList} conversions=${conversions} rateOf=${rateOf} />`}
     </div>
     <div class="popup-actions">
-      ${usingHarbour && !ok && html`<span class="muted">${harbourUser === me
-        ? 'Offer something for the use of their harbours.' : 'Ask for something for the use of your harbours.'}</span>`}
       <button class="primary" disabled=${!ok} onClick=${offer}>Offer to ${game.names[opp]}</button>
     </div>
   </div>`;

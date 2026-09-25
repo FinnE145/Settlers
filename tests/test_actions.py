@@ -87,7 +87,7 @@ def test_player_trade_with_fish():
     game.players[0]["fish"] = [3]
     game.players[1]["fish"] = [1, 2]
     with pytest.raises(RuleError):
-        act(game, 0, "offer_trade", give={"wood": 1}, get={})  # no gifts
+        act(game, 0, "offer_trade", give={}, get={})  # nothing at all
     with pytest.raises(RuleError):
         act(game, 0, "offer_trade", give={"wood": 3}, get={"ore": 1})
     act(game, 0, "offer_trade", give={"wood": 2}, give_fish=[3], get={"ore": 1}, get_fish=[2])
@@ -507,11 +507,8 @@ def test_put_cards_through_the_other_players_harbour():
     assert "harbours" in game.log[-1]["text"]
 
 
-def test_harbour_use_needs_a_fee_and_the_cards():
+def test_harbour_use_needs_the_cards():
     game = harbour_rental_game()
-    use = {"user": 0, "conversions": [{"give": "wood", "get": "ore"}]}
-    with pytest.raises(RuleError):
-        act(game, 0, "offer_trade", give={}, get={}, harbour=use)  # nothing for the owner
     too_much = {"user": 0, "conversions": [{"give": "wood", "get": "ore"}] * 3}  # needs 6 wood
     with pytest.raises(RuleError):
         act(game, 0, "offer_trade", give={"sheep": 1}, get={}, harbour=too_much)
@@ -543,3 +540,18 @@ def test_accept_checks_the_users_harbour_cards():
     game.players[0]["hand"]["wood"] = 1  # red spent wood meanwhile
     with pytest.raises(RuleError):
         act(game, 0, "accept_trade")
+
+
+def test_gifts_and_free_harbour_use():
+    game = harbour_rental_game()
+    act(game, 0, "offer_trade", give={"sheep": 1}, get={})
+    assert game.log[-1]["text"] == "{0} offers {1} 1 sheep as a gift."
+    act(game, 1, "accept_trade")
+    assert game.players[1]["hand"]["sheep"] == 1
+    act(game, 0, "offer_trade", give={}, get={"sheep": 1})  # asking for something for nothing
+    act(game, 1, "accept_trade")
+    assert game.players[0]["hand"]["sheep"] == 1
+    use = {"user": 0, "conversions": [{"give": "wood", "get": "ore"}]}
+    act(game, 0, "offer_trade", give={}, get={}, harbour=use)  # free use of their harbour
+    act(game, 1, "accept_trade")
+    assert game.players[0]["hand"]["ore"] == 1

@@ -899,12 +899,8 @@ class Game:
         harbour = self._clean_harbour(a.get("harbour"))
         mine = _count(give) or give_fish
         theirs = _count(get) or get_fish
-        if harbour is None:
-            self._require(mine and theirs, "Both sides of a trade need something.")
-        elif harbour["user"] == p:
-            self._require(mine, "Offer something for the use of their harbours.")
-        else:
-            self._require(theirs, "Ask for something for the use of your harbours.")
+        # Either side may be empty (gifts are fine), but not the whole offer.
+        self._require(mine or theirs or harbour, "The offer is empty.")
         t = {"from": p, "give": give, "get": get, "give_fish": give_fish, "get_fish": get_fish,
              "harbour": harbour}
         cards, fish = self._trade_needs(t, p)
@@ -913,15 +909,20 @@ class Game:
         self.trade = t
         o = 1 - p
         offered, asked = self._describe_side(give, give_fish), self._describe_side(get, get_fish)
-        if harbour is None:
+        if harbour is None and not theirs:
+            text = f"{self._who(p)} offers {self._who(o)} {offered} as a gift"
+        elif harbour is None and not mine:
+            text = f"{self._who(p)} asks {self._who(o)} for {asked}"
+        elif harbour is None:
             text = f"{self._who(p)} offers {offered} for {asked}"
         elif harbour["user"] == p:
-            text = (f"{self._who(p)} offers {offered}" + (f" for {asked}" if theirs else "")
-                    + f" to use {self._who(o)}'s harbours: {self._describe_harbour(harbour)}")
+            text = (f"{self._who(p)} asks to use {self._who(o)}'s harbours "
+                    f"({self._describe_harbour(harbour)})" + (f", offering {offered}" if mine else "")
+                    + (f", for {asked}" if theirs else ""))
         else:
             text = (f"{self._who(p)} offers {self._who(o)} the use of their harbours "
                     f"({self._describe_harbour(harbour)})" + (f" and {offered}" if mine else "")
-                    + f" for {asked}")
+                    + (f" for {asked}" if theirs else ""))
         self._log(text + ".")
 
     def _act_accept_trade(self, p: int, a: dict) -> None:

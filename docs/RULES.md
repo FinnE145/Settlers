@@ -120,15 +120,16 @@ strictly passes the holder.
 
 - After the active player rolls, either player can propose a trade; the other accepts or
   declines, and a new proposal replaces the open one. Resources and fish tokens can be
-  traded (fish by token value). Both sides must include something.
+  traded (fish by token value). Either side may be empty, so gifts are fine; only a
+  completely empty offer is refused.
 - Bank rates: 4:1 by default, 3:1 at a generic harbour.
 - 2:1 harbours work both ways: at a wood harbour, 2 wood → 1 of anything, or
   2 of the same other resource → 1 wood.
 - With cities on two or more 2:1 harbours, those harbours' resources trade 1:1 with each
   other (e.g. cities on the wood and brick harbours: wood ↔ brick 1:1).
 - **Using the other player's harbours:** a trade offer can include conversions through the
-  other player's harbours at their rates (e.g. 2 wood → 1 ore at their wood 2:1). The user
-  pays the owner a fee (cards and/or fish) as the other side of the trade; on acceptance the
+  other player's harbours at their rates (e.g. 2 wood → 1 ore at their wood 2:1), usually
+  with a fee (cards and/or fish) for the owner, though that's optional. On acceptance the
   user's cards go through the harbour and the result goes to the user. Like any player trade
   it can happen on either player's turn, after the roll. Rates are fixed when offered; a
   counter-offer keeps the conversions and can change the fee.
