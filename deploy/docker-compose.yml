@@ -1,0 +1,18 @@
+# fe-pro deployment (see /home/finne/SERVER.md). Run from /srv/stacks/settlers/repo/deploy:
+#   docker compose up -d --build
+# The root docker-compose.yml is the generic version; this one follows the server's
+# stack convention: state in /srv/stacks/settlers/data, published on the tailnet only.
+services:
+  settlers:
+    build: { context: .. }
+    image: settlers
+    container_name: settlers
+    # Run as finne so the bind-mounted data/ stays finne-owned like the rest of the stack.
+    user: "1000:1000"
+    volumes:
+      - /srv/stacks/settlers/data:/data
+    ports:
+      # Tailnet interface only -- never 0.0.0.0. The app has no accounts; Tailscale is the
+      # boundary (the app's own address check is a second layer, not the only one).
+      - "100.64.132.111:45670:8000"
+    restart: unless-stopped
