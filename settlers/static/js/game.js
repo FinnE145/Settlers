@@ -172,9 +172,7 @@ export function GameScreen({ session, onError }) {
     popup = html`<${Popup} title=${game.winner === me ? 'You win!' : `${NAMES[game.winner]} wins`}>
       <div class="final">
         ${game.players.map((p, i) => html`<div key=${i} class=${'final-row name-' + p.colour}>
-          <b>${NAMES[i]}</b> <span>${p.total_vp} VP</span>
-          ${p.dev.some((d) => d.card === 'victory_point')
-            && html`<span class="muted small">(incl. ${p.dev.filter((d) => d.card === 'victory_point').length} VP card)</span>`}
+          <b>${NAMES[i]}</b> <span>${p.vp} VP</span>
         </div>`)}
       </div>
       <div class="popup-actions">

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
+import os
 import secrets
 import time
 from urllib.parse import urlsplit
@@ -18,9 +20,36 @@ COOKIE_MAX_AGE = 60 * 60 * 24 * 30
 PING_SECONDS = 20
 
 
-def create_app(store: GameStore | None = None) -> Flask:
+def parse_networks(spec: str | None) -> list:
+    """Comma-separated CIDRs, e.g. "100.64.0.0/10,127.0.0.0/8". Empty means allow all."""
+    if not spec:
+        return []
+    return [ipaddress.ip_network(part.strip(), strict=False) for part in spec.split(",") if part.strip()]
+
+
+def address_allowed(address: str | None, networks: list) -> bool:
+    if not networks:
+        return True
+    try:
+        ip = ipaddress.ip_address(address or "")
+    except ValueError:
+        return False
+    if ip.version == 6 and ip.ipv4_mapped:
+        ip = ip.ipv4_mapped
+    return any(ip in net for net in networks if net.version == ip.version)
+
+
+def create_app(store: GameStore | None = None, allowed_networks: str | None = None) -> Flask:
+    """Settings come from arguments, falling back to environment variables:
+
+    SETTLERS_SAVE_FILE         where to keep the running game (unset: memory only)
+    SETTLERS_ALLOWED_NETWORKS  comma-separated CIDRs allowed to connect (unset: anyone)
+    """
     app = Flask(__name__)
-    store = store or GameStore()
+    app.config["MAX_CONTENT_LENGTH"] = 64 * 1024
+    store = store or GameStore(os.environ.get("SETTLERS_SAVE_FILE") or None)
+    networks = parse_networks(allowed_networks if allowed_networks is not None
+                              else os.environ.get("SETTLERS_ALLOWED_NETWORKS"))
     app.extensions["settlers_store"] = store
     sock = Sock(app)
 
@@ -46,6 +75,12 @@ def create_app(store: GameStore | None = None) -> Flask:
     @app.errorhandler(RuleError)
     def rule_error(err):
         return jsonify({"error": str(err)}), 400
+
+    @app.before_request
+    def check_network():
+        if not address_allowed(request.remote_addr, networks):
+            app.logger.warning("Refused a request from %s", request.remote_addr)
+            abort(403)
 
     @app.before_request
     def make_nonce():

@@ -7,7 +7,8 @@ Seafarers ship rules and the Fishermen fish rules, with the house rules below.
 
 - 2 players, red and blue. The starting player is chosen at random.
 - The first player to have **14 VP during their own turn** wins (15 while holding the old boot).
-- VP: settlement 1, city 2, longest trade route 2, largest army 2, each victory point card 1.
+- VP: settlement 1, city 2, longest trade route 2, largest army 2, each victory point card
+  played 1.
 
 ## Board
 
@@ -98,9 +99,11 @@ city = 2 wheat + 3 ore, development card = sheep + wheat + ore.
 
 ## Development cards
 
-- You can't play a card on the turn you got it (victory point cards are never played;
-  they count automatically). At most one development card is played per turn, at any point
-  in your turn, including before rolling.
+- You can't play a card on the turn you got it, and at most one is played per turn, at any
+  point in your turn, including before rolling.
+- Victory point cards are the exception: they stay hidden and count only once played, and
+  you can play any number of them at any point in your own turn, including the turn you
+  got them. (Keeping them hidden keeps your public VP low for the old boot.)
 - Knight: move the robber or pirate as on a 7 (no discards). Road building: 2 free roads
   and/or ships. Year of plenty: take any 2 resource cards. Monopoly: the opponent gives you
   every card of the named resource from their hand (banked cards are safe).

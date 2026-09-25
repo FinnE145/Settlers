@@ -217,12 +217,32 @@ def test_year_of_plenty_and_monopoly():
     assert game.players[1]["bank"]["wood"] == 2  # banked cards are safe
 
 
-def test_victory_point_cards_count_but_cannot_be_played():
+def test_victory_point_cards_count_once_played():
     game = main_phase(make_game())
-    game.players[0]["dev"] = [{"card": "victory_point", "turn": 0}]
-    assert game.total_vp(0) == game.public_vp(0) + 1
+    game.turn_number = 4
+    game.players[0]["dev"] = [{"card": "victory_point", "turn": 4}, {"card": "victory_point", "turn": 4},
+                              {"card": "knight", "turn": 1}]
+    assert game.public_vp(0) == 0  # hidden cards don't count
+    act(game, 0, "play_dev", card="knight")
+    act(game, 0, "move_robber", piece="robber", hex=H.id, take="ore")
+    # Same turn they were drawn, and not limited by the one-card-per-turn rule.
+    act(game, 0, "play_dev", card="victory_point")
+    act(game, 0, "play_dev", card="victory_point")
+    assert game.public_vp(0) == 2
+    assert game.view_for(1)["players"][0]["vp"] == 2
     with pytest.raises(RuleError):
-        act(game, 0, "play_dev", card="victory_point")
+        act(game, 0, "play_dev", card="victory_point")  # none left
+    game.players[1]["dev"] = [{"card": "victory_point", "turn": 1}]
+    with pytest.raises(RuleError):
+        act(game, 1, "play_dev", card="victory_point")  # only on your own turn (it's red's)
+
+
+def test_playing_a_victory_point_card_can_win():
+    game = main_phase(make_game())
+    game.vp_needed = lambda p: 1
+    game.players[0]["dev"] = [{"card": "victory_point", "turn": 1}]
+    act(game, 0, "play_dev", card="victory_point")
+    assert game.phase == "finished" and game.winner == 0
 
 
 # ------------------------------------------------------------------ fish

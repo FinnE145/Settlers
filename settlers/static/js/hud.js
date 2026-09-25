@@ -94,12 +94,12 @@ function DevCards({ dev, playable, onPlay }) {
   }
   return html`<div class="dev-cards">
     ${Object.entries(groups).map(([key, g]) => {
-      const can = !g.isNew && playable.includes(g.card);
-      const title = g.card === 'victory_point' ? 'Victory point (counts automatically)'
-        : g.isNew ? 'Got this turn: playable from next turn' : can ? 'Click to play' : 'Not playable right now';
+      const can = (!g.isNew || g.card === 'victory_point') && playable.includes(g.card);
+      const title = can ? 'Click to play'
+        : g.isNew && g.card !== 'victory_point' ? 'Got this turn: playable from next turn' : 'Not playable right now';
       return html`<button key=${key} class=${'card-btn dev' + (g.isNew ? ' new' : '')} disabled=${!can}
         title=${title} onClick=${() => onPlay(g.card)}>
-        <${DevCard} card=${g.card} count=${g.n} dim=${g.isNew} w=${36} />
+        <${DevCard} card=${g.card} count=${g.n} dim=${g.isNew && g.card !== 'victory_point'} w=${36} />
       </button>`;
     })}
   </div>`;
@@ -143,8 +143,8 @@ export function PlayerBar({ game, p, onPlayDev, onBank, onFish, canFish }) {
       </div>
       <${Badges} info=${info} />
     </div>
-    <span class="vp" title=${info.total_vp !== info.vp ? `${info.vp} public + ${info.total_vp - info.vp} hidden` : 'Victory points'}>
-      <${VPToken} size=${40} /><b>${info.total_vp}</b><span class="vp-of">/${info.vp_needed}</span>
+    <span class="vp" title="Victory points">
+      <${VPToken} size=${40} /><b>${info.vp}</b><span class="vp-of">/${info.vp_needed}</span>
     </span>
   </div>`;
 }

@@ -109,3 +109,72 @@ def test_abandon(app):
     assert post(client(app), "/api/abandon").status_code == 400
     assert post(guest, "/api/abandon").status_code == 200
     assert host.get("/api/session").get_json()["status"] == "none"
+
+
+# ------------------------------------------------------------ saving
+
+
+def test_game_survives_a_restart(tmp_path):
+    from settlers.store import GameStore
+
+    save = str(tmp_path / "game.json")
+    app1 = create_app(GameStore(save))
+    host, guest = start_game(app1)
+    view = host.get("/api/session").get_json()
+    first = view["game"]["setup"]["player"]
+    mover = host if view["seat"] == first else guest
+    spot = mover.get("/api/session").get_json()["game"]["legal"]["settlement"][0]
+    assert post(mover, "/api/action", {"action": {"type": "build_settlement", "vertex": spot}}).status_code == 200
+    token = cookie(host)
+
+    app2 = create_app(GameStore(save))  # a fresh server reading the same file
+    again = app2.test_client()
+    again.set_cookie(SEAT_COOKIE, token)
+    restored = again.get("/api/session").get_json()
+    before = host.get("/api/session").get_json()
+    assert restored["status"] == "playing"
+    assert restored["game"]["buildings"] == before["game"]["buildings"]
+    assert restored["board"] == before["board"]
+
+
+def test_unreadable_save_is_set_aside(tmp_path):
+    from settlers.store import GameStore
+
+    save = tmp_path / "game.json"
+    save.write_text("{not json")
+    store = GameStore(str(save))
+    assert store.game is None
+    assert (tmp_path / "game.json.unreadable").exists()
+
+
+def test_ending_a_game_is_saved(tmp_path):
+    from settlers.store import GameStore
+
+    save = str(tmp_path / "game.json")
+    app1 = create_app(GameStore(save))
+    host, _ = start_game(app1)
+    post(host, "/api/abandon")
+    assert GameStore(save).game is None
+
+
+# ---------------------------------------------------------- network
+
+
+def test_only_allowed_networks_get_in(app):
+    app = create_app(allowed_networks="100.64.0.0/10,127.0.0.0/8")
+    outside = app.test_client()
+    outside.environ_base["REMOTE_ADDR"] = "203.0.113.9"
+    assert outside.get("/").status_code == 403
+    assert outside.get("/api/session").status_code == 403
+    tailnet = app.test_client()
+    tailnet.environ_base["REMOTE_ADDR"] = "100.101.2.3"
+    assert tailnet.get("/").status_code == 200
+    mapped = app.test_client()
+    mapped.environ_base["REMOTE_ADDR"] = "::ffff:100.101.2.3"
+    assert mapped.get("/").status_code == 200
+
+
+def test_large_bodies_are_refused(app):
+    c = client(app)
+    res = c.post("/api/action", data="x" * (70 * 1024), content_type="application/json")
+    assert res.status_code == 413

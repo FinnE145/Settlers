@@ -1,0 +1,13 @@
+services:
+  settlers:
+    build: .
+    image: settlers
+    container_name: settlers
+    restart: unless-stopped
+    ports:
+      - "45670:8000"
+    volumes:
+      - settlers-data:/data
+
+volumes:
+  settlers-data:

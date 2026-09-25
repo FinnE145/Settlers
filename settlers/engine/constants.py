@@ -73,7 +73,7 @@ DEV_NAMES = {
     "year_of_plenty": "year of plenty",
     "monopoly": "monopoly",
 }
-PLAYABLE_DEV = ("knight", "road_building", "year_of_plenty", "monopoly")
+PLAYABLE_DEV = ("knight", "road_building", "year_of_plenty", "monopoly", "victory_point")
 
 COSTS = {
     "road": {"wood": 1, "brick": 1},

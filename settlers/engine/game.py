@@ -50,6 +50,7 @@ def _new_player() -> dict:
         "fish": [],  # token values (1-3); the boot is tracked separately
         "dev": [],  # unplayed cards: {"card": name, "turn": turn bought}
         "knights": 0,
+        "vp_cards": 0,  # victory point cards played (face up)
     }
 
 
@@ -77,6 +78,7 @@ class Game:
         self.topo = board.topology
         if _state is not None:
             self.__dict__.update(_state)
+            self.route_lengths = [self.route_length(p) for p in range(len(self.players))]
             return
 
         self.players = [_new_player() for _ in PLAYER_COLOURS]
@@ -103,6 +105,7 @@ class Game:
         self.fish_spent: list[int] = []
         self.boot_holder = None
         self.longest_route = None  # player index holding the title
+        self.route_lengths = [0] * len(self.players)  # cached; refreshed when routes change
         self.largest_army = None
         self.ship_moved = False
         self.dev_played = False
@@ -210,17 +213,24 @@ class Game:
                     return True
         return False
 
+    def _own_vertices(self, p: int) -> set:
+        verts = {v for v, b in self.buildings.items() if b["owner"] == p}
+        for e, r in self.routes.items():
+            if r["owner"] == p:
+                verts.update(self.topo.edges[e].vertices)
+        return verts
+
+    def _frontier_edges(self, p: int) -> list[int]:
+        """Edges touching a corner where p has a building or a road/ship."""
+        return sorted({e for v in self._own_vertices(p) for e in self.topo.vertices[v].edges})
+
     def legal_settlements(self, p: int) -> list[int]:
-        setup = self.phase == "setup"
-        out = []
-        for v in self.topo.vertices:
-            if not self._vertex_touches_land(v.id) or not self._distance_ok(v.id):
-                continue
-            if setup or any(
-                self.routes.get(e, {}).get("owner") == p for e in v.edges
-            ):
-                out.append(v.id)
-        return out
+        if self.phase == "setup":
+            candidates = range(len(self.topo.vertices))
+        else:
+            candidates = sorted({v for e, r in self.routes.items() if r["owner"] == p
+                                 for v in self.topo.edges[e].vertices})
+        return [v for v in candidates if self._vertex_touches_land(v) and self._distance_ok(v)]
 
     def legal_cities(self, p: int) -> list[int]:
         return [v for v, b in self.buildings.items() if b["owner"] == p and b["kind"] == "settlement"]
@@ -229,9 +239,8 @@ class Game:
         if self.phase == "setup":
             return [e for e in self._setup_edges() if self._edge_touches_land(e)]
         return [
-            e.id for e in self.topo.edges
-            if e.id not in self.routes and self._edge_touches_land(e.id)
-            and self._route_connects(p, e.id, "road")
+            e for e in self._frontier_edges(p)
+            if e not in self.routes and self._edge_touches_land(e) and self._route_connects(p, e, "road")
         ]
 
     def legal_ships(self, p: int, ignore: int | None = None) -> list[int]:
@@ -239,10 +248,9 @@ class Game:
         if self.phase == "setup":
             return [e for e in self._setup_edges() if self._edge_touches_sea(e) and e not in blocked]
         return [
-            e.id for e in self.topo.edges
-            if e.id not in self.routes and e.id != ignore and e.id not in blocked
-            and self._edge_touches_sea(e.id)
-            and self._route_connects(p, e.id, "ship", ignore=ignore)
+            e for e in self._frontier_edges(p)
+            if e not in self.routes and e != ignore and e not in blocked
+            and self._edge_touches_sea(e) and self._route_connects(p, e, "ship", ignore=ignore)
         ]
 
     def _setup_edges(self) -> list[int]:
@@ -252,38 +260,98 @@ class Game:
 
     # ------------------------------------------------------------------ scoring
 
+    ROUTE_SEARCH_BUDGET = 400_000  # a safety valve; realistic networks need far fewer
+
     def route_length(self, p: int) -> int:
-        """Longest chain of p's roads/ships. Roads and ships only join at p's own
-        buildings, and an opponent's building breaks a chain."""
+        """Longest chain of p's roads/ships (a trail: no edge used twice). Roads and ships
+        only join at p's own buildings, and an opponent's building breaks a chain.
+
+        Stretches without choices (corners where exactly two of p's pieces meet and the
+        chain may pass) are collapsed into single weighted segments first, so the search
+        only branches at junctions. A generous step budget guards against absurd networks.
+        """
         own = {e: r["kind"] for e, r in self.routes.items() if r["owner"] == p}
         if not own:
             return 0
-        at_vertex: dict[int, list] = {}
+        edges_at: dict[int, list] = {}
         for e in own:
             for v in self.topo.edges[e].vertices:
-                at_vertex.setdefault(v, []).append(e)
+                edges_at.setdefault(v, []).append(e)
 
-        def extend(v, last, used):
-            b = self.buildings.get(v)
-            if b is not None and b["owner"] != p:
-                return len(used)
-            mixed_ok = b is not None and b["owner"] == p
-            best = len(used)
-            for e2 in at_vertex.get(v, ()):
-                if e2 in used or (own[e2] != own[last] and not mixed_ok):
-                    continue
-                a, c = self.topo.edges[e2].vertices
-                best = max(best, extend(c if a == v else a, e2, used | {e2}))
-            return best
+        def other_end(e, v):
+            a, b = self.topo.edges[e].vertices
+            return b if a == v else a
 
-        best = 0
+        def passable(v, a, b):
+            bld = self.buildings.get(v)
+            if bld is not None and bld["owner"] != p:
+                return False
+            return own[a] == own[b] or bld is not None
+
+        def internal(v):
+            es = edges_at[v]
+            return len(es) == 2 and passable(v, es[0], es[1])
+
+        # Segments: (end vertex, edge at that end, other end vertex, edge there, length).
+        segments, best, seen = [], 0, set()
         for e in own:
-            a, c = self.topo.edges[e].vertices
-            best = max(best, extend(c, e, frozenset([e])), extend(a, e, frozenset([e])))
+            if e in seen:
+                continue
+            seen.add(e)
+            length, ends, loop = 1, [], False
+            for start in self.topo.edges[e].vertices:
+                v, cur = start, e
+                while internal(v):
+                    nxt = edges_at[v][0] if edges_at[v][1] == cur else edges_at[v][1]
+                    if nxt in seen:
+                        loop = True  # came all the way round a closed loop
+                        break
+                    seen.add(nxt)
+                    length += 1
+                    cur, v = nxt, other_end(nxt, v)
+                ends.append((v, cur))
+                if loop:
+                    break
+            if loop:
+                best = max(best, length)
+                continue
+            (va, ea), (vb, eb) = ends
+            segments.append((va, ea, vb, eb, length))
+
+        # Each segment can be walked in two directions ("entries"). Precompute, for each
+        # entry, which entries may follow it at its far end.
+        entries = []  # (segment bit, first edge, start vertex, last edge, far vertex, length)
+        for i, (va, ea, vb, eb, n) in enumerate(segments):
+            entries.append((1 << i, ea, va, eb, vb, n))
+            entries.append((1 << i, eb, vb, ea, va, n))
+        starting_at: dict[int, list] = {}
+        for k, (_, _, start, _, _, _) in enumerate(entries):
+            starting_at.setdefault(start, []).append(k)
+        follows = [
+            [k2 for k2 in starting_at.get(far, ()) if entries[k2][0] != bit and passable(far, last, entries[k2][1])]
+            for bit, _, _, last, far, _ in entries
+        ]
+        steps = 0
+
+        def search(k, used, length):
+            nonlocal steps
+            steps += 1
+            result = length
+            if steps > self.ROUTE_SEARCH_BUDGET:
+                return result
+            for k2 in follows[k]:
+                bit = entries[k2][0]
+                if not used & bit:
+                    result = max(result, search(k2, used | bit, length + entries[k2][5]))
+            return result
+
+        for k, entry in enumerate(entries):
+            best = max(best, search(k, entry[0], entry[5]))
         return best
 
     def _update_longest_route(self) -> None:
         lengths = [self.route_length(p) for p in range(len(self.players))]
+        self.route_lengths = lengths
         holder = self.longest_route
         new = holder
         if holder is None:
@@ -304,7 +372,8 @@ class Game:
                 self._log(f"{self._name(new)} takes the longest trade route ({lengths[new]}).")
 
     def public_vp(self, p: int) -> int:
-        vp = 0
+        """Victory points everyone can see. Unplayed VP cards don't count yet."""
+        vp = self.players[p]["vp_cards"]
         for b in self.buildings.values():
             if b["owner"] == p:
                 vp += 2 if b["kind"] == "city" else 1
@@ -314,10 +383,6 @@ class Game:
             vp += 2
         return vp
 
-    def total_vp(self, p: int) -> int:
-        hidden = sum(1 for d in self.players[p]["dev"] if d["card"] == "victory_point")
-        return self.public_vp(p) + hidden
-
     def vp_needed(self, p: int) -> int:
         return VP_TO_WIN + (1 if self.boot_holder == p else 0)
 
@@ -325,12 +390,12 @@ class Game:
         if self.phase != "play":
             return
         p = self.current
-        if self.total_vp(p) >= self.vp_needed(p):
+        if self.public_vp(p) >= self.vp_needed(p):
             self.phase = "finished"
             self.winner = p
             self.pending = []
             self.trade = None
-            self._log(f"{self._name(p)} wins with {self.total_vp(p)} VP!")
+            self._log(f"{self._name(p)} wins with {self.public_vp(p)} VP!")
 
     # ------------------------------------------------------------------ fish
 
@@ -527,6 +592,7 @@ class Game:
             self._require(e in legal(p), f"You can't place a {kind} there.")
             self.routes[e] = {"owner": p, "kind": kind, "turn": 0}
             self._log(f"{self._name(p)} places a {kind}.")
+            self.route_lengths = [self.route_length(q) for q in range(len(self.players))]
             self._advance_setup()
             return
 
@@ -802,18 +868,31 @@ class Game:
         self._draw_dev(p)
 
     def playable_dev(self, p: int) -> list[str]:
-        if self.phase != "play" or p != self.current or self.pending or self.dev_played:
+        if self.phase != "play" or p != self.current or self.pending:
             return []
-        return sorted({d["card"] for d in self.players[p]["dev"]
-                       if d["card"] in PLAYABLE_DEV and d["turn"] < self.turn_number})
+        out = set()
+        for d in self.players[p]["dev"]:
+            if d["card"] == "victory_point":
+                out.add(d["card"])  # any time on your turn, even the turn you got it
+            elif not self.dev_played and d["turn"] < self.turn_number:
+                out.add(d["card"])
+        return sorted(out)
 
     def _act_play_dev(self, p: int, a: dict) -> None:
         self._require_turn(p)
         self._require(not self.pending, "Something needs to be resolved first.")
-        self._require(not self.dev_played, "You've already played a development card this turn.")
         card = a.get("card")
         self._require(card in PLAYABLE_DEV, "That card can't be played.")
         dev = self.players[p]["dev"]
+        if card == "victory_point":
+            # Not limited to one per turn, and playable the turn you got it.
+            entry = next((d for d in dev if d["card"] == card), None)
+            self._require(entry is not None, "You don't have that card.")
+            dev.remove(entry)
+            self.players[p]["vp_cards"] += 1
+            self._log(f"{self._name(p)} plays a victory point card.")
+            return
+        self._require(not self.dev_played, "You've already played a development card this turn.")
         entry = next((d for d in dev if d["card"] == card and d["turn"] < self.turn_number), None)
         self._require(entry is not None, "You don't have that card, or you got it this turn.")
         if card == "year_of_plenty":
@@ -1038,9 +1117,10 @@ class Game:
                 "fish_count": len(pl["fish"]),
                 "dev_count": len(pl["dev"]),
                 "knights": pl["knights"],
+                "vp_cards": pl["vp_cards"],
                 "settlements": s,
                 "cities": c,
-                "route_length": self.route_length(i),
+                "route_length": self.route_lengths[i],
                 "longest_route": self.longest_route == i,
                 "largest_army": self.largest_army == i,
                 "boot": self.boot_holder == i,
@@ -1051,7 +1131,6 @@ class Game:
                     "bank": dict(pl["bank"]),
                     "fish": sorted(pl["fish"]),
                     "dev": [dict(d, new=d["turn"] == self.turn_number) for d in pl["dev"]],
-                    "total_vp": self.total_vp(i),
                 })
             players.append(info)
 

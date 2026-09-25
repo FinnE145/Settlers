@@ -1,13 +1,17 @@
 """Holder for the single game this server runs, plus who is seated in it.
 
-Kept behind one small interface so it can later be swapped for something that
-persists games (the game state itself is plain JSON-serialisable data).
+If given a save file, the game and seats are written there after every change and
+read back on startup, so restarting the server doesn't lose a game in progress.
 """
 
 from __future__ import annotations
 
+import json
+import logging
+import os
 import random
 import secrets
+import tempfile
 import threading
 
 from .engine.board import Board, generate_board
@@ -15,8 +19,12 @@ from .engine.constants import PLAYER_COLOURS
 from .engine.game import Game, RuleError
 
 
+log = logging.getLogger(__name__)
+SAVE_FORMAT = 1
+
+
 class GameStore:
-    def __init__(self):
+    def __init__(self, save_path: str | None = None):
         self.lock = threading.RLock()
         self.changed = threading.Condition(self.lock)
         self.version = 0
@@ -25,12 +33,61 @@ class GameStore:
         self.seats: dict[str, int] = {}  # secret player token -> player index
         self.invite_token: str | None = None
         self.creator: int | None = None
+        self.save_path = save_path
+        if save_path:
+            self._load()
 
     # ---------------------------------------------------------------- changes
 
     def _bump(self) -> None:
         self.version += 1
+        self._save()
         self.changed.notify_all()
+
+    # ----------------------------------------------------------- saving
+
+    def _save(self) -> None:
+        if not self.save_path:
+            return
+        data = {
+            "format": SAVE_FORMAT,
+            "game": self.game.to_dict() if self.game else None,
+            "seats": self.seats,
+            "invite_token": self.invite_token,
+            "creator": self.creator,
+        }
+        folder = os.path.dirname(os.path.abspath(self.save_path))
+        os.makedirs(folder, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=folder, prefix=".save-", suffix=".json")
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(data, f)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, self.save_path)  # atomic: a crash leaves the old save intact
+        except BaseException:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+            raise
+
+    def _load(self) -> None:
+        if not os.path.exists(self.save_path):
+            return
+        try:
+            with open(self.save_path) as f:
+                data = json.load(f)
+            if data.get("format") != SAVE_FORMAT:
+                raise ValueError(f"unknown save format {data.get('format')!r}")
+            self.game = Game.from_dict(data["game"]) if data["game"] else None
+            self.seats = {str(t): int(i) for t, i in data["seats"].items()}
+            self.invite_token = data["invite_token"]
+            self.creator = data["creator"]
+        except Exception:
+            # Keep the unreadable file for inspection and start without a game.
+            broken = self.save_path + ".unreadable"
+            os.replace(self.save_path, broken)
+            log.exception("Could not load %s; moved it to %s", self.save_path, broken)
+            self.game, self.seats, self.invite_token, self.creator = None, {}, None, None
 
     def wait_for_change(self, since: int, timeout: float) -> int:
         with self.changed:
