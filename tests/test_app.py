@@ -39,6 +39,17 @@ def test_security_headers(app):
     assert res.headers["X-Frame-Options"] == "DENY"
 
 
+def test_static_files_are_revalidated(app):
+    c = client(app)
+    res = c.get("/static/js/main.js")
+    assert res.status_code == 200
+    assert res.headers["Cache-Control"] == "no-cache"
+    etag = res.headers["ETag"]
+    res.close()
+    again = c.get("/static/js/main.js", headers={"If-None-Match": etag})
+    assert again.status_code == 304
+
+
 def test_setup_preview_and_regenerate(app):
     c = client(app)
     a = c.get("/api/setup").get_json()["board"]

@@ -101,6 +101,10 @@ def create_app(store: GameStore | None = None, allowed_networks: str | None = No
         response.headers["Referrer-Policy"] = "no-referrer"
         if request.path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-store"
+        elif request.path.startswith("/static/"):
+            # Check back every load (a cheap 304 when unchanged) so a redeploy is picked up
+            # without a hard refresh.
+            response.headers["Cache-Control"] = "no-cache"
         return response
 
     # ------------------------------------------------------------------ pages
