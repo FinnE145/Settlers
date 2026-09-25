@@ -1264,4 +1264,7 @@ class Game:
         state = {k: d[k] if k in d else cls._STATE_DEFAULTS[k] for k in cls._STATE_KEYS}
         state["buildings"] = {v: {"owner": o, "kind": k} for v, o, k in d["buildings"]}
         state["routes"] = {e: {"owner": o, "kind": k, "turn": t} for e, o, k, t in d["routes"]}
-        return cls(Board.from_dict(d["board"]), rng=rng, _state=state)
+        game = cls(Board.from_dict(d["board"]), rng=rng, _state=state)
+        if "harbourmaster" not in d and game.phase != "setup":
+            game._update_building_titles()  # saved before these titles existed
+        return game

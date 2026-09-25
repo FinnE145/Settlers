@@ -467,3 +467,18 @@ def test_saves_from_before_the_new_titles_still_load():
     del data["harbourmaster"], data["master_fisherman"]
     again = Game.from_dict(data)
     assert again.harbourmaster is None and again.master_fisherman is None
+
+
+def test_old_saves_get_the_new_titles_on_load():
+    import json
+
+    from settlers.engine.game import Game
+
+    board, spots = many_harbours_board()
+    game = main_phase(make_game(board))
+    for v in spots[:3]:
+        place(game, 1, v)
+    data = json.loads(json.dumps(game.to_dict()))
+    del data["harbourmaster"], data["master_fisherman"], data["names"]
+    again = Game.from_dict(data)
+    assert again.harbourmaster == 1 and again.names == ["Red", "Blue"]
