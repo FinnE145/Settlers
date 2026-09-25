@@ -42,6 +42,7 @@ function promptText(game, me) {
   if (other) return `Waiting for ${game.names[other.player]}…`;
   if (game.phase === 'setup') {
     if (game.setup.player !== me) return `${game.names[game.setup.player]} is placing.`;
+    if (game.setup.awaiting === 'end') return 'End your turn.';
     return game.setup.awaiting === 'settlement' ? 'Place a settlement.' : 'Place a road or ship next to it.';
   }
   if (game.current !== me) return `${game.names[game.current]}'s turn.`;
@@ -83,7 +84,7 @@ function Log({ entries, names }) {
   const ref = useRef(null);
   useEffect(() => { if (ref.current) ref.current.scrollTop = ref.current.scrollHeight; }, [entries.length]);
   return html`<div class="log" ref=${ref}>
-    ${entries.map((e) => html`<div key=${e.n}>${e.text.split(/\{(\d)\}/).map((part, i) =>
+    ${entries.map((e) => html`<div key=${e.n} class=${e.undone ? 'undone' : ''}>${e.text.split(/\{(\d)\}/).map((part, i) =>
       (i % 2 ? html`<b class=${'name-' + COLOURS[+part]}>${names[+part]}</b>` : part))}</div>`)}
   </div>`;
 }
@@ -179,6 +180,7 @@ export function GameScreen({ session, onError }) {
   const mainPhase = myTurn && game.rolled && game.pending.length === 0;
   const tradeWindow = game.phase === 'play' && game.rolled && game.pending.length === 0;
   const setupRoute = game.phase === 'setup' && game.setup.player === me && game.setup.awaiting === 'route';
+  const setupPlaced = game.phase === 'setup' && game.setup.player === me && game.setup.awaiting === 'end';
 
   // Starting and free roads/ships show every road and ship spot at once.
   const routePlacing = (setupRoute && !gold) || Boolean(freeRoutes);
@@ -188,7 +190,7 @@ export function GameScreen({ session, onError }) {
   // Forced placements pick their own mode; otherwise use what the player chose.
   let active = mode;
   if (game.phase === 'setup' && game.setup.player === me) {
-    active = game.setup.awaiting === 'settlement' ? 'settlement' : 'route';
+    active = { settlement: 'settlement', route: 'route' }[game.setup.awaiting] || null;
   } else if (routePlacing) {
     active = 'route';
   } else if (robberDue) {
@@ -312,6 +314,8 @@ export function GameScreen({ session, onError }) {
           selected=${active === 'move_ship' ? shipFrom : robberHex} onPick=${onPick}
           classFor=${active === 'route' ? (id) => (roadSpots.has(id) ? (shipSpots.has(id) ? 'either' : '') : 'only-ship') : null} />`}
       <//>
+      ${game.can_undo && html`<button class="undo" title="Take back your last move"
+        onClick=${() => send({ type: 'undo' })}>↶ Undo</button>`}
       ${popup && html`<div class="popup-anchor" ...${popupDrag}>${popup}</div>`}
     </section>
     <${PlayerBar} game=${game} p=${me} onPlayDev=${playDev}
@@ -325,6 +329,7 @@ export function GameScreen({ session, onError }) {
         ${myTurn && !game.rolled && html`<button class="primary big" disabled=${game.pending.length > 0}
           onClick=${() => send({ type: 'roll' })}>Roll dice</button>`}
         ${mainPhase && html`<button class="big" onClick=${() => send({ type: 'end_turn' })}>End turn</button>`}
+        ${setupPlaced && html`<button class="primary big" onClick=${() => send({ type: 'end_turn' })}>End turn</button>`}
       </div>
       ${routePlacing && html`<div class="coast-choice">
         <div class="muted small">Coastal spots (outlined in blue) take:</div>

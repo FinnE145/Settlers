@@ -40,6 +40,8 @@ def run_setup(game):
             act(game, p, "build_road", edge=legal["road"][0])
         else:
             act(game, p, "build_ship", edge=legal["ship"][0])
+        if game.setup_awaiting == "end":
+            act(game, p, "end_turn")
     for item in list(game.pending):
         act(game, item["player"], "choose_gold", cards={"ore": item["count"]})
 
@@ -68,7 +70,14 @@ def test_setup_rules_enforced():
         act(game, 0, "build_road", edge=far)  # must touch the new settlement
     act(game, 0, "build_road", edge=H.edges[0])
     with pytest.raises(RuleError):
+        act(game, 1, "build_settlement", vertex=far_vertex(game))  # red hasn't ended their turn
+    act(game, 0, "end_turn")
+    with pytest.raises(RuleError):
         act(game, 1, "build_settlement", vertex=H.corners[1])  # distance rule
+
+
+def far_vertex(game):
+    return next(v for v in game.legal_settlements(1) if v not in H.corners)
 
 
 def land_edge(game, v):
@@ -81,6 +90,8 @@ def place_setup(game, vertices):
         p = game.setup_order[step]
         act(game, p, "build_settlement", vertex=v)
         act(game, p, "build_road", edge=land_edge(game, v))
+        if game.setup_awaiting == "end":
+            act(game, p, "end_turn")
 
 
 def test_starting_cards_and_fish_arrive_after_setup():
@@ -97,12 +108,15 @@ def test_starting_cards_and_fish_arrive_after_setup():
     act(game, 0, "build_settlement", vertex=v1)
     assert sum(game.players[0]["hand"].values()) == 0  # nothing until setup ends
     act(game, 0, "build_road", edge=land_edge(game, v1))
+    act(game, 0, "end_turn")
     for v in blue:
         act(game, 1, "build_settlement", vertex=v)
         act(game, 1, "build_road", edge=land_edge(game, v))
+    act(game, 1, "end_turn")
     act(game, 0, "build_settlement", vertex=sea.corners[0])
-    assert game.players[0]["fish"] == []
     act(game, 0, "build_road", edge=land_edge(game, sea.corners[0]))
+    assert game.players[0]["fish"] == []  # nothing until the last turn is ended
+    act(game, 0, "end_turn")
 
     assert game.phase == "play"
     assert game.players[0]["hand"] == {"wood": 1, "brick": 1, "sheep": 2, "wheat": 0, "ore": 0}

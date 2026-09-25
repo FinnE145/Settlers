@@ -239,6 +239,11 @@ svg.board { width: 100%; height: auto; display: block; }
 
 /* ---- Side panel ---- */
 .prompt { font-weight: 700; font-size: 1.1em; padding: 8px; border-radius: 8px; background: #f3efe6; }
+/* Floats in the board's top-right corner, under the pop-ups. */
+button.undo {
+  position: absolute; top: 8px; right: 8px; z-index: 4;
+  font-weight: 600; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
 .prompt.mine { background: #fff3c4; border: 1px solid #e0c160; }
 .turn-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
 .dice-box { display: flex; align-items: center; gap: 6px; }
@@ -259,6 +264,8 @@ button.danger { color: var(--red); border-color: #e0b4b4; }
   flex: 1; min-height: 80px; overflow-y: auto; font-size: 0.86em;
   border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; background: #fbfaf6;
 }
+.log .undone { text-decoration: line-through; color: var(--muted); }
+.log .undone b { color: inherit; }
 .links summary { cursor: pointer; color: var(--muted); }
 .links { display: flex; flex-direction: column; gap: 6px; }
 .links[open] > * + * { margin-top: 6px; }

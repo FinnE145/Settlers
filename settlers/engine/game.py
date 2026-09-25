@@ -9,6 +9,8 @@ whole state as JSON-compatible data.
 
 from __future__ import annotations
 
+import copy
+import json
 import random
 from collections import Counter
 
@@ -55,6 +57,13 @@ def _new_player() -> dict:
         "knights": 0,
         "vp_cards": 0,  # victory point cards played (face up)
     }
+
+
+# Moves a player can take back on their own turn (see Game._undoable for the conditional ones).
+UNDOABLE = frozenset({
+    "build_settlement", "build_city", "build_road", "build_ship", "move_ship", "maritime",
+    "deposit", "skip_free_routes", "choose_gold", "discard",
+})
 
 
 def _count(cards: dict) -> int:
@@ -117,7 +126,7 @@ class Game:
         second = 1 - first_player
         self.setup_order = [first_player, second, second, first_player]
         self.setup_step = 0
-        self.setup_awaiting = "settlement"  # settlement | route
+        self.setup_awaiting = "settlement"  # settlement | route | end (placed, can still undo)
         self.setup_vertex = None  # settlement just placed, awaiting its road/ship
         self.rolled = False
         self.dice = None
@@ -142,6 +151,9 @@ class Game:
         self.trade = None
         self.winner = None
         self.log: list[dict] = []
+        # Undo history for the player who moved last: [{"player", "log", "log_end", "state"}].
+        # Cleared by anything that can't be taken back (see _undoable).
+        self.undo: list[dict] = []
         self._log(f"{self._who(first_player)} places first.")
 
     # ------------------------------------------------------------------ helpers
@@ -558,6 +570,7 @@ class Game:
         "roll", "end_turn", "choose_gold", "discard", "move_robber",
         "maritime", "offer_trade", "accept_trade", "decline_trade", "cancel_trade",
         "buy_dev", "play_dev", "skip_free_routes", "fish", "deposit", "pass_boot", "move_ship",
+        "undo",
     )
 
     def act(self, p: int, action: dict) -> None:
@@ -567,8 +580,19 @@ class Game:
             raise RuleError("Unknown action.")
         if p not in range(len(self.players)):
             raise RuleError("Unknown player.")
+        if action["type"] == "undo":
+            self._undo(p)
+            return
+        step = self._undo_step(p, action)
         getattr(self, "_act_" + action["type"])(p, action)
         self._check_winner()
+        if step is None or self.phase == "finished":
+            self.undo = []
+        else:
+            if self.undo and self.undo[-1]["player"] != p:
+                self.undo = []  # never mix players' histories
+            step["log_end"] = len(self.log)
+            self.undo.append(step)
 
     @staticmethod
     def _int_arg(action: dict, key: str) -> int:
@@ -628,7 +652,14 @@ class Game:
             self.routes[e] = {"owner": p, "kind": kind, "turn": 0}
             self._log(f"{self._who(p)} places a {kind}.")
             self.route_lengths = [self.route_length(q) for q in range(len(self.players))]
-            self._advance_setup()
+            nxt = self.setup_step + 1
+            if nxt < len(self.setup_order) and self.setup_order[nxt] == p:
+                # Placing twice in a row: straight on to the next one.
+                self.setup_step = nxt
+                self.setup_awaiting = "settlement"
+                self.setup_vertex = None
+            else:
+                self.setup_awaiting = "end"  # ends with end_turn, so it can be undone first
             return
 
         self._require_turn(p)
@@ -682,6 +713,11 @@ class Game:
             self._produce(total)
 
     def _act_end_turn(self, p: int, a: dict) -> None:
+        if self.phase == "setup":
+            self._require(self.setup_order[self.setup_step] == p, "It's not your turn to place.")
+            self._require(self.setup_awaiting == "end", "Finish placing first.")
+            self._advance_setup()
+            return
         self._require_main_phase(p)
         self.trade = None
         self.current = 1 - self.current
@@ -1210,6 +1246,46 @@ class Game:
         self._log(f"{self._who(p)} moves a ship.")
         self._update_longest_route()
 
+    # --- undo
+
+    def _undoable(self, p: int, a: dict) -> bool:
+        """Moves you can take back: your own, on your own turn, with no luck involved, nothing
+        new revealed and nothing done to the other player. Anything else locks in everything
+        before it: a roll, ending a turn, any move by the other player, anything to do with a
+        trade between players, moving the robber or pirate, stealing, monopoly, drawing a
+        development card, passing the old boot."""
+        kind = a["type"]
+        if self.phase == "setup":
+            return (kind in ("build_settlement", "build_road", "build_ship")
+                    and p == self.setup_order[self.setup_step])
+        if self.phase != "play" or p != self.current:
+            return False
+        if kind == "play_dev":
+            return a.get("card") != "monopoly"
+        if kind == "fish":
+            items = a.get("items")
+            return isinstance(items, list) and not any(
+                isinstance(i, dict) and i.get("kind") in ("steal", "dev_card") for i in items)
+        return kind in UNDOABLE
+
+    def _undo_step(self, p: int, a: dict) -> dict | None:
+        if not self._undoable(p, a):
+            return None
+        return {"player": p, "log": len(self.log), "state": self._snapshot()}
+
+    def can_undo(self, p: int | None) -> bool:
+        return self.phase != "finished" and bool(self.undo) and self.undo[-1]["player"] == p
+
+    def _undo(self, p: int) -> None:
+        self._require(self.can_undo(p), "Nothing to undo.")
+        step = self.undo.pop()
+        self._restore(step["state"])
+        undone = self.log[step["log"]:step["log_end"]]
+        for entry in undone:
+            entry["undone"] = True
+        what = undone[0]["text"].removeprefix(self._who(p) + " ") if undone else "their last move."
+        self._log(f"{self._who(p)} undoes: {what}")
+
     # ------------------------------------------------------------------ views
 
     def legal_for(self, p: int) -> dict:
@@ -1219,7 +1295,7 @@ class Game:
             if self.setup_order[self.setup_step] == p and not self.pending:
                 if self.setup_awaiting == "settlement":
                     legal["settlement"] = self.legal_settlements(p)
-                else:
+                elif self.setup_awaiting == "route":
                     legal["road"] = self.legal_roads(p)
                     legal["ship"] = self.legal_ships(p)
             return legal
@@ -1281,7 +1357,7 @@ class Game:
         log = []
         for entry in self.log[-60:]:
             text = entry.get("private", {}).get(str(me), entry["text"])
-            log.append({"n": entry["n"], "text": text})
+            log.append({"n": entry["n"], "text": text, **({"undone": True} if entry.get("undone") else {})})
 
         return {
             "me": me,
@@ -1315,6 +1391,7 @@ class Game:
             "can_pass_boot": self.can_pass_boot(me) if me is not None else False,
             "ship_moved": self.ship_moved,
             "dev_played": self.dev_played,
+            "can_undo": self.can_undo(me),
         }
 
     # ------------------------------------------------------------ persistence
@@ -1324,23 +1401,46 @@ class Game:
         "setup_step", "setup_awaiting", "setup_vertex", "rolled", "dice", "pending",
         "robber", "pirate", "dev_deck", "fish_bag", "fish_spent", "boot_holder",
         "longest_route", "largest_army", "harbourmaster", "master_fisherman",
-        "ship_moved", "dev_played", "trade", "winner", "log", "names",
+        "ship_moved", "dev_played", "trade", "winner", "log", "names", "undo",
     )
     # Keys added after games may already have been saved, with their starting values.
-    _STATE_DEFAULTS = {"harbourmaster": None, "master_fisherman": None, "names": ["Red", "Blue"]}
+    _STATE_DEFAULTS = {"harbourmaster": None, "master_fisherman": None, "names": ["Red", "Blue"],
+                       "undo": []}
 
-    def to_dict(self) -> dict:
+    def _state_dict(self) -> dict:
         d = {k: getattr(self, k) for k in self._STATE_KEYS}
         d["buildings"] = [[v, b["owner"], b["kind"]] for v, b in self.buildings.items()]
         d["routes"] = [[e, r["owner"], r["kind"], r["turn"]] for e, r in self.routes.items()]
+        return d
+
+    @staticmethod
+    def _pieces_from(d: dict) -> tuple[dict, dict]:
+        buildings = {v: {"owner": o, "kind": k} for v, o, k in d["buildings"]}
+        routes = {e: {"owner": o, "kind": k, "turn": t} for e, o, k, t in d["routes"]}
+        return buildings, routes
+
+    def _snapshot(self) -> dict:
+        """What undo puts back: the whole state except the log and the undo history."""
+        d = self._state_dict()
+        del d["log"], d["undo"]
+        return json.loads(json.dumps(d))  # a deep copy that can also be saved
+
+    def _restore(self, state: dict) -> None:
+        for k, v in state.items():
+            if k not in ("buildings", "routes"):
+                setattr(self, k, v)
+        self.buildings, self.routes = self._pieces_from(state)
+        self.route_lengths = [self.route_length(p) for p in range(len(self.players))]
+
+    def to_dict(self) -> dict:
+        d = self._state_dict()
         d["board"] = self.board.to_dict()
         return d
 
     @classmethod
     def from_dict(cls, d: dict, rng: random.Random | None = None) -> "Game":
-        state = {k: d[k] if k in d else cls._STATE_DEFAULTS[k] for k in cls._STATE_KEYS}
-        state["buildings"] = {v: {"owner": o, "kind": k} for v, o, k in d["buildings"]}
-        state["routes"] = {e: {"owner": o, "kind": k, "turn": t} for e, o, k, t in d["routes"]}
+        state = {k: d[k] if k in d else copy.deepcopy(cls._STATE_DEFAULTS[k]) for k in cls._STATE_KEYS}
+        state["buildings"], state["routes"] = cls._pieces_from(d)
         game = cls(Board.from_dict(d["board"]), rng=rng, _state=state)
         if "harbourmaster" not in d and game.phase != "setup":
             game._update_building_titles()  # saved before these titles existed

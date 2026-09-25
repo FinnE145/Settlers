@@ -44,6 +44,8 @@ city = 2 wheat + 3 ore, development card = sheep + wheat + ore.
 
 - Snake order (A, B, B, A). Each placement is a settlement plus a road or a ship next to it
   (a ship needs a sea edge). Starting settlements may go anywhere legal.
+- After your placement (B: after both of theirs), you end your turn yourself, so you can still
+  undo before that.
 - When all placements are done, each starting settlement (first and second) gives one card
   from every adjacent producing hex (gold: your choice), plus one fish token for each fishing
   ground or lake it touches. Gold picks are made then, before the first roll.
@@ -59,6 +61,19 @@ city = 2 wheat + 3 ore, development card = sheep + wheat + ore.
 4. Actions in any order: trade, build, buy or play a development card, move one ship,
    spend fish, pass the old boot.
 5. End the turn.
+
+## Undo
+
+- On your own turn you can take back your moves one at a time, most recent first: building,
+  placing starting pieces, moving a ship, bank and harbour trades, banking cards, spending
+  fish, playing a knight, road building, year of plenty or a victory point card, skipping free
+  roads/ships, and choosing gold or discards.
+- Anything involving luck, hidden information, the other player or a turn change is final, and
+  so is everything before it: rolling, ending a turn, any move by the other player, anything to
+  do with a trade between players (offering, accepting, declining, withdrawing), moving the
+  robber or pirate, stealing (including with fish), monopoly, drawing a development card
+  (bought or with fish), passing the old boot, and a winning move.
+- Undone moves stay in the log, struck through, followed by a note of what was undone.
 
 ## Building
 

@@ -62,12 +62,16 @@ def candidates(game: Game, p: int, rng: random.Random) -> list[tuple[float, dict
     if "discard" in pend:
         add(10, {"type": "discard", "cards": random_cards(rng, pend["discard"]["count"], hand)})
 
+    if game.can_undo(p):
+        add(0.4, {"type": "undo"})
     if game.phase == "setup":
         for v in legal.get("settlement", []):
             add(1, {"type": "build_settlement", "vertex": v})
         for kind in ("road", "ship"):
             for e in legal.get(kind, []):
                 add(1, {"type": f"build_{kind}", "edge": e})
+        if game.setup_awaiting == "end" and game.setup_order[game.setup_step] == p:
+            add(3, {"type": "end_turn"})
         return out
 
     if "robber" in pend:
