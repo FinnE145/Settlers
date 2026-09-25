@@ -432,7 +432,7 @@ def test_longest_route_title_and_break():
     act(game, 0, "build_road", edge=edges[4])
     assert game.route_length(0) == 5
     assert game.longest_route == 0
-    assert game.public_vp(0) == 3
+    assert game.public_vp(0) == 2  # settlement + longest route (1 VP)
     # Blue settles in the middle of the chain: 2 + 3, nobody has 5.
     place(game, 1, verts[2])
     game._update_longest_route()

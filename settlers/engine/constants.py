@@ -88,7 +88,11 @@ SETTLEMENT_LIMIT = 5
 CITY_LIMIT = 4
 
 VP_TO_WIN = 14
-LONGEST_ROUTE_MIN = 5
-LARGEST_ARMY_MIN = 3
+# Titles, each worth TITLE_VP to whoever holds it.
+TITLE_VP = 1
+LONGEST_ROUTE_MIN = 5  # roads/ships in a chain
+LARGEST_ARMY_MIN = 3  # knights played
+HARBOURMASTER_MIN = 3  # harbours with one of your buildings on them
+FISHERMAN_MIN = 3  # settlements/cities touching a fishing ground or the lake
 
 PLAYER_COLOURS = ("red", "blue")

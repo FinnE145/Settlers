@@ -16,7 +16,7 @@ const html = htm.bind(h);
 
 const TARGET_KIND = {
   settlement: 'vertex', city: 'vertex', road: 'edge', ship: 'edge', robber: 'hex', pirate: 'hex',
-  move_ship: 'edge', ship_target: 'edge',
+  move_ship: 'edge', ship_target: 'edge', route: 'edge',
 };
 const BUILD_ACTION = {
   settlement: ['build_settlement', 'vertex'],
@@ -36,7 +36,7 @@ function promptText(game, me) {
     if (p.type === 'discard') return `Discard ${plural(p.count, 'card')}.`;
     if (p.type === 'gold') return `Pick ${plural(p.count, 'card')} from gold.`;
     if (p.type === 'robber') return discardsWaiting ? 'Waiting for discards…' : 'Move the robber or the pirate.';
-    if (p.type === 'free_routes') return `Place ${plural(p.count, 'free road or ship')}.`;
+    if (p.type === 'free_routes') return `Place ${p.count} free ${p.count === 1 ? 'road or ship' : 'roads or ships'}.`;
   }
   const other = game.pending.find((p) => p.player !== me);
   if (other) return `Waiting for ${NAMES[other.player]}…`;
@@ -94,6 +94,7 @@ export function GameScreen({ session, onError }) {
   const [mode, setMode] = useState(null);
   const [robberHex, setRobberHex] = useState(null);
   const [shipFrom, setShipFrom] = useState(null);
+  const [coastKind, setCoastKind] = useState('road'); // what a coastal edge gets when either fits
   const [panel, setPanel] = useState(null); // {kind, ...} for pop-ups the player opens
   const legal = game.legal || {};
   const info = game.players[me];
@@ -109,11 +110,17 @@ export function GameScreen({ session, onError }) {
   const tradeWindow = game.phase === 'play' && game.rolled && game.pending.length === 0;
   const setupRoute = game.phase === 'setup' && game.setup.player === me && game.setup.awaiting === 'route';
 
+  // Starting and free roads/ships show every road and ship spot at once.
+  const routePlacing = (setupRoute && !gold) || Boolean(freeRoutes);
+  const roadSpots = new Set(legal.road || []);
+  const shipSpots = new Set(legal.ship || []);
+
   // Forced placements pick their own mode; otherwise use what the player chose.
   let active = mode;
   if (game.phase === 'setup' && game.setup.player === me) {
-    if (game.setup.awaiting === 'settlement') active = 'settlement';
-    else if (mode !== 'road' && mode !== 'ship') active = (legal.road || []).length ? 'road' : 'ship';
+    active = game.setup.awaiting === 'settlement' ? 'settlement' : 'route';
+  } else if (routePlacing) {
+    active = 'route';
   } else if (robberDue) {
     if (mode !== 'robber' && mode !== 'pirate') active = 'robber';
   } else if (active === 'move_ship') {
@@ -123,6 +130,7 @@ export function GameScreen({ session, onError }) {
   }
   // Ship moves pick a ship first, then where it goes.
   let targets = active && legal[active];
+  if (active === 'route') targets = [...new Set([...roadSpots, ...shipSpots])];
   if (active === 'move_ship' && shipFrom != null) targets = (legal.ship_targets || {})[shipFrom] || [];
 
   const reset = () => { setMode(null); setRobberHex(null); setShipFrom(null); };
@@ -138,7 +146,10 @@ export function GameScreen({ session, onError }) {
   };
 
   const onPick = (id) => {
-    if (BUILD_ACTION[active]) {
+    if (active === 'route') {
+      const kind = roadSpots.has(id) && shipSpots.has(id) ? coastKind : roadSpots.has(id) ? 'road' : 'ship';
+      send({ type: `build_${kind}`, edge: id });
+    } else if (BUILD_ACTION[active]) {
       const [type, key] = BUILD_ACTION[active];
       send({ type, [key]: id });
     } else if (active === 'robber' || active === 'pirate') {
@@ -227,7 +238,8 @@ export function GameScreen({ session, onError }) {
       <${Board} board=${board} roll=${roll} robber=${game.robber}>
         <${Pieces} board=${board} game=${game} />
         ${active && html`<${Targets} board=${board} kind=${TARGET_KIND[active]} ids=${targets}
-          selected=${active === 'move_ship' ? shipFrom : robberHex} onPick=${onPick} />`}
+          selected=${active === 'move_ship' ? shipFrom : robberHex} onPick=${onPick}
+          classFor=${active === 'route' ? (id) => (roadSpots.has(id) ? (shipSpots.has(id) ? 'either' : '') : 'only-ship') : null} />`}
       <//>
       ${popup && html`<div class="popup-anchor">${popup}</div>`}
     </section>
@@ -243,11 +255,13 @@ export function GameScreen({ session, onError }) {
           onClick=${() => send({ type: 'roll' })}>Roll dice</button>`}
         ${mainPhase && html`<button class="big" onClick=${() => send({ type: 'end_turn' })}>End turn</button>`}
       </div>
-      ${setupRoute && html`<${BuildButtons} game=${game} me=${me} mode=${active} setMode=${chooseMode}
-        kinds=${['road', 'ship']} free />`}
-      ${freeRoutes && html`<div>
-        <${BuildButtons} game=${game} me=${me} mode=${active} setMode=${chooseMode} kinds=${['road', 'ship']} free />
-        <button class="small-gap" onClick=${() => send({ type: 'skip_free_routes' })}>Skip the rest</button>
+      ${routePlacing && html`<div class="coast-choice">
+        <div class="muted small">Coastal spots (outlined in blue) take:</div>
+        <div class="toggle">
+          <button class=${coastKind === 'road' ? 'active' : ''} onClick=${() => setCoastKind('road')}>Road</button>
+          <button class=${coastKind === 'ship' ? 'active' : ''} onClick=${() => setCoastKind('ship')}>Ship</button>
+        </div>
+        ${freeRoutes && html`<button onClick=${() => send({ type: 'skip_free_routes' })}>Skip the rest</button>`}
       </div>`}
       ${mainPhase && html`<div class="actions-panel">
         <${BuildButtons} game=${game} me=${me} mode=${active} setMode=${chooseMode}

@@ -21,7 +21,9 @@ from .constants import (
     DEV_NAMES,
     FISH_PRICES,
     FISH_TOKENS,
+    FISHERMAN_MIN,
     GOLD,
+    HARBOURMASTER_MIN,
     LAKE,
     LAKE_NUMBERS,
     LARGEST_ARMY_MIN,
@@ -31,6 +33,7 @@ from .constants import (
     RESOURCES,
     SETTLEMENT_LIMIT,
     TERRAIN_RESOURCE,
+    TITLE_VP,
     VP_TO_WIN,
 )
 
@@ -107,6 +110,8 @@ class Game:
         self.longest_route = None  # player index holding the title
         self.route_lengths = [0] * len(self.players)  # cached; refreshed when routes change
         self.largest_army = None
+        self.harbourmaster = None
+        self.master_fisherman = None
         self.ship_moved = False
         self.dev_played = False
         self.trade = None
@@ -377,10 +382,9 @@ class Game:
         for b in self.buildings.values():
             if b["owner"] == p:
                 vp += 2 if b["kind"] == "city" else 1
-        if self.longest_route == p:
-            vp += 2
-        if self.largest_army == p:
-            vp += 2
+        for title in (self.longest_route, self.largest_army, self.harbourmaster, self.master_fisherman):
+            if title == p:
+                vp += TITLE_VP
         return vp
 
     def vp_needed(self, p: int) -> int:
@@ -566,6 +570,7 @@ class Game:
         self.buildings[v] = {"owner": p, "kind": "settlement"}
         self._log(f"{self._name(p)} builds a settlement.")
         self._update_longest_route()
+        self._update_building_titles()
 
     def _act_build_city(self, p: int, a: dict) -> None:
         v = self._int_arg(a, "vertex")
@@ -622,6 +627,7 @@ class Game:
         self.current = self.first_player
         self.turn_number = 1
         self._update_longest_route()
+        self._update_building_titles()
         self._log("Setup done.")
         self._starting_production()
 
@@ -923,14 +929,42 @@ class Game:
             self.players[p]["hand"][res] += n
             self._log(f"{self._name(p)} plays monopoly on {res} and takes {n}.")
 
-    def _update_largest_army(self) -> None:
-        for q, pl in enumerate(self.players):
-            holder = self.largest_army
-            if q == holder or pl["knights"] < LARGEST_ARMY_MIN:
+    def _update_count_title(self, attr: str, counts: list[int], minimum: int, label: str) -> None:
+        """Titles that go to the first player to reach ``minimum`` and move only when
+        someone strictly passes the holder (counts here never go down)."""
+        for q, n in enumerate(counts):
+            holder = getattr(self, attr)
+            if q == holder or n < minimum:
                 continue
-            if holder is None or pl["knights"] > self.players[holder]["knights"]:
-                self.largest_army = q
-                self._log(f"{self._name(q)} takes the largest army.")
+            if holder is None or n > counts[holder]:
+                setattr(self, attr, q)
+                self._log(f"{self._name(q)} becomes {label}.")
+
+    def _update_largest_army(self) -> None:
+        self._update_count_title("largest_army", [pl["knights"] for pl in self.players],
+                                 LARGEST_ARMY_MIN, "the largest army")
+
+    def harbour_count(self, p: int) -> int:
+        """Harbours with one of p's settlements or cities on them."""
+        return sum(
+            1 for h in self.board.harbours
+            if any(self.buildings.get(v, {}).get("owner") == p for v in self.topo.edges[h["edge"]].vertices)
+        )
+
+    def fish_building_count(self, p: int) -> int:
+        """p's settlements and cities touching a fishing ground or the lake."""
+        fish_vertices = {v for f in self.board.fisheries for v in f["vertices"]}
+        lake = self.board.lake_hex
+        if lake is not None:
+            fish_vertices.update(v for v in self.topo.hexes[lake].corners if v is not None)
+        return sum(1 for v, b in self.buildings.items() if b["owner"] == p and v in fish_vertices)
+
+    def _update_building_titles(self) -> None:
+        n = range(len(self.players))
+        self._update_count_title("harbourmaster", [self.harbour_count(p) for p in n],
+                                 HARBOURMASTER_MIN, "harbourmaster")
+        self._update_count_title("master_fisherman", [self.fish_building_count(p) for p in n],
+                                 FISHERMAN_MIN, "master fisherman")
 
     def _add_free_routes(self, p: int, n: int) -> None:
         item = self._pending_for("free_routes", p)
@@ -1123,6 +1157,10 @@ class Game:
                 "route_length": self.route_lengths[i],
                 "longest_route": self.longest_route == i,
                 "largest_army": self.largest_army == i,
+                "harbourmaster": self.harbourmaster == i,
+                "master_fisherman": self.master_fisherman == i,
+                "harbours": self.harbour_count(i),
+                "fish_buildings": self.fish_building_count(i),
                 "boot": self.boot_holder == i,
             }
             if i == me or self.phase == "finished":
@@ -1177,8 +1215,11 @@ class Game:
         "players", "phase", "first_player", "current", "turn_number", "setup_order",
         "setup_step", "setup_awaiting", "setup_vertex", "rolled", "dice", "pending",
         "robber", "pirate", "dev_deck", "fish_bag", "fish_spent", "boot_holder",
-        "longest_route", "largest_army", "ship_moved", "dev_played", "trade", "winner", "log",
+        "longest_route", "largest_army", "harbourmaster", "master_fisherman",
+        "ship_moved", "dev_played", "trade", "winner", "log",
     )
+    # Keys added after games may already have been saved, with their starting values.
+    _STATE_DEFAULTS = {"harbourmaster": None, "master_fisherman": None}
 
     def to_dict(self) -> dict:
         d = {k: getattr(self, k) for k in self._STATE_KEYS}
@@ -1189,7 +1230,7 @@ class Game:
 
     @classmethod
     def from_dict(cls, d: dict, rng: random.Random | None = None) -> "Game":
-        state = {k: d[k] for k in cls._STATE_KEYS}
+        state = {k: d[k] if k in d else cls._STATE_DEFAULTS[k] for k in cls._STATE_KEYS}
         state["buildings"] = {v: {"owner": o, "kind": k} for v, o, k in d["buildings"]}
         state["routes"] = {e: {"owner": o, "kind": k, "turn": t} for e, o, k, t in d["routes"]}
         return cls(Board.from_dict(d["board"]), rng=rng, _state=state)

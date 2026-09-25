@@ -165,7 +165,7 @@ def test_largest_army():
         game.dev_played = False
         game.pending = []
         act(game, 0, "play_dev", card="knight")
-    assert game.largest_army == 0 and game.public_vp(0) == 2
+    assert game.largest_army == 0 and game.public_vp(0) == 1
     game.pending = []
     game.current = 1
     for i in range(3):
@@ -386,3 +386,84 @@ def test_pirate_pins_ships():
     pirate_hex = next(h for h in TOPO.edges[edges[2]].hexes if not TOPO.hexes[h].frame)
     game.pirate = pirate_hex
     assert edges[2] not in game.movable_ships(0)
+
+
+# ----------------------------------------------------------- new titles
+
+
+def many_harbours_board():
+    spots = [hex_at(c, r) for r in (0, 2, 4, 6) for c in (0, 2, 4, 6)]
+    harbours = [{"edge": h.edges[0], "kind": "3:1"} for h in spots]
+    return make_board(harbours=harbours), [TOPO.edges[h.edges[0]].vertices[0] for h in spots]
+
+
+def test_harbourmaster_needs_three_and_moves_on_more():
+    board, spots = many_harbours_board()
+    game = main_phase(make_game(board))
+    for v in spots[:2]:
+        place(game, 0, v)
+    game._update_building_titles()
+    assert game.harbourmaster is None
+    place(game, 0, spots[2], kind="city")  # a city counts as one harbour, like a settlement
+    game._update_building_titles()
+    assert game.harbour_count(0) == 3 and game.harbourmaster == 0
+    assert game.public_vp(0) == 2 + 2 + 1  # two settlements, a city, the title
+    for v in spots[3:6]:
+        place(game, 1, v)
+    game._update_building_titles()
+    assert game.harbourmaster == 0  # a tie doesn't take it
+    place(game, 1, spots[6])
+    game._update_building_titles()
+    assert game.harbourmaster == 1
+
+
+def test_master_fisherman_counts_buildings_on_fish():
+    sea, lake = hex_at(2, 2), hex_at(5, 5)
+    fishery = {"hex": sea.id, "corner": 0, "number": 4,
+               "vertices": [sea.corners[5], sea.corners[0], sea.corners[1]]}
+    game = main_phase(make_game(make_board(terrain={sea.id: "sea", lake.id: "lake"}, fisheries=[fishery])))
+    place(game, 0, sea.corners[5])
+    place(game, 0, sea.corners[1], kind="city")
+    game._update_building_titles()
+    assert game.fish_building_count(0) == 2 and game.master_fisherman is None
+    place(game, 0, lake.corners[3])
+    place(game, 0, hex_at(0, 7).corners[3])  # not on fish
+    game._update_building_titles()
+    assert game.fish_building_count(0) == 3 and game.master_fisherman == 0
+    for i in (0, 1, 2):
+        place(game, 1, lake.corners[i] if i != 1 else lake.corners[5])
+    place(game, 1, sea.corners[0])
+    game._update_building_titles()
+    assert game.fish_building_count(1) == 4 and game.master_fisherman == 1
+
+
+def test_building_a_settlement_updates_the_titles():
+    board, spots = many_harbours_board()
+    game = main_phase(make_game(board))
+    for v in spots[:2]:
+        place(game, 0, v)
+    target = spots[2]
+    place(game, 0, edges=[TOPO.vertices[target].edges[0]])
+    give(game, 0, wood=1, brick=1, sheep=1, wheat=1)
+    act(game, 0, "build_settlement", vertex=target)
+    assert game.harbourmaster == 0
+    view = game.view_for(1)["players"][0]
+    assert view["harbourmaster"] and view["harbours"] == 3
+
+
+def test_titles_are_worth_one_vp_each():
+    game = main_phase(make_game())
+    game.longest_route = game.largest_army = game.harbourmaster = game.master_fisherman = 0
+    assert game.public_vp(0) == 4
+
+
+def test_saves_from_before_the_new_titles_still_load():
+    import json
+
+    from settlers.engine.game import Game
+
+    game = main_phase(make_game())
+    data = json.loads(json.dumps(game.to_dict()))
+    del data["harbourmaster"], data["master_fisherman"]
+    again = Game.from_dict(data)
+    assert again.harbourmaster is None and again.master_fisherman is None

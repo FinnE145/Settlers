@@ -119,7 +119,7 @@ svg.board { width: 100%; height: auto; display: block; }
 .p-blue { fill: var(--blue); background: var(--blue); stroke: var(--blue); }
 .road-outline { stroke: #111; stroke-width: 9; stroke-linecap: round; }
 .road { stroke-width: 6; stroke-linecap: round; }
-.ship { stroke: #fff; stroke-width: 1.5; }
+.ship { stroke: #111; stroke-width: 1.8; stroke-linejoin: round; }
 .mast { fill: #fff; }
 .building { stroke: #111; stroke-width: 1.8; stroke-linejoin: round; }
 .robber path, .robber circle { fill: #3a3a3a; stroke: #fff; stroke-width: 1.5; }
@@ -355,3 +355,7 @@ button.close { border: 0; background: none; font-size: 1.4em; line-height: 1; pa
 }
 .final { display: flex; flex-direction: column; gap: 4px; min-width: 220px; }
 .final-row { display: flex; gap: 8px; align-items: baseline; font-size: 1.1em; }
+.target.edge.only-ship { fill: rgba(190, 225, 255, 0.7); }
+.target.edge.either { fill: rgba(255, 255, 255, 0.55); stroke: #9fd0ff; stroke-width: 2; }
+.coast-choice { display: flex; flex-direction: column; gap: 4px; }
+.coast-choice .toggle { margin-bottom: 0; }

@@ -33,10 +33,17 @@ export function PieceSupply({ info, colour, size = 20 }) {
   </span>`;
 }
 
+const TITLES = [
+  ['longest_route', 'Longest route', 'Longest trade route (1 VP)'],
+  ['largest_army', 'Largest army', 'Largest army (1 VP)'],
+  ['harbourmaster', 'Harbourmaster', 'Most harbours (1 VP)'],
+  ['master_fisherman', 'Master fisherman', 'Most settlements and cities on fish (1 VP)'],
+];
+
 function Badges({ info }) {
   return html`<span class="badges">
-    ${info.longest_route && html`<span class="badge" title="Longest trade route (2 VP)">Longest route</span>`}
-    ${info.largest_army && html`<span class="badge" title="Largest army (2 VP)">Largest army</span>`}
+    ${TITLES.filter(([key]) => info[key]).map(([key, label, title]) =>
+      html`<span key=${key} class="badge" title=${title}>${label}</span>`)}
   </span>`;
 }
 
@@ -60,6 +67,8 @@ export function OpponentBar({ game, p }) {
     </span>
     <${Stat} label="Knights" value=${info.knights} title="Knights played" />
     <${Stat} label="Route" value=${info.route_length} title="Longest trade route length" />
+    <${Stat} label="Harbours" value=${info.harbours} title="Harbours with their settlements or cities" />
+    <${Stat} label="On fish" value=${info.fish_buildings} title="Settlements and cities on fish" />
     <${Badges} info=${info} />
     <${PieceSupply} info=${info} colour=${colour} size=${16} />
     <span class="vp small" title="Victory points (public)">
@@ -140,6 +149,9 @@ export function PlayerBar({ game, p, onPlayDev, onBank, onFish, canFish }) {
       <${PieceSupply} info=${info} colour=${colour} size=${18} />
       <div>
         <${Stat} label="Knights" value=${info.knights} /> · <${Stat} label="Route" value=${info.route_length} />
+      </div>
+      <div>
+        <${Stat} label="Harbours" value=${info.harbours} /> · <${Stat} label="On fish" value=${info.fish_buildings} />
       </div>
       <${Badges} info=${info} />
     </div>

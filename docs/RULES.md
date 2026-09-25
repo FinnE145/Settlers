@@ -7,8 +7,8 @@ Seafarers ship rules and the Fishermen fish rules, with the house rules below.
 
 - 2 players, red and blue. The starting player is chosen at random.
 - The first player to have **14 VP during their own turn** wins (15 while holding the old boot).
-- VP: settlement 1, city 2, longest trade route 2, largest army 2, each victory point card
-  played 1.
+- VP: settlement 1, city 2, each victory point card played 1, and 1 for each title:
+  longest trade route, largest army, harbourmaster and master fisherman.
 
 ## Board
 
@@ -42,8 +42,8 @@ city = 2 wheat + 3 ore, development card = sheep + wheat + ore.
 
 ## Setup
 
-- Snake order (A, B, B, A). Each placement is a settlement plus a road, or a ship if the
-  settlement is on the coast. Starting settlements may go anywhere legal.
+- Snake order (A, B, B, A). Each placement is a settlement plus a road or a ship next to it
+  (a ship needs a sea edge). Starting settlements may go anywhere legal.
 - When all placements are done, each starting settlement (first and second) gives one card
   from every adjacent producing hex (gold: your choice), plus one fish token for each fishing
   ground or lake it touches. Gold picks are made then, before the first roll.
@@ -74,12 +74,18 @@ city = 2 wheat + 3 ore, development card = sheep + wheat + ore.
   of ships joining two of your buildings. It goes to any legal new ship position.
 - Road building card: any 2 of roads and ships.
 
-## Longest trade route and largest army
+## Titles (1 VP each)
+
+Each goes to the first player to reach its minimum, and moves only when the other player
+strictly passes the holder.
 
 - Longest trade route: the longest continuous chain of your roads and ships, at least 5.
   Roads and ships only chain through one of your own buildings; an opponent's building
-  breaks a chain. The title moves only when someone strictly exceeds the holder.
-- Largest army: at least 3 knights played, strictly more than the opponent.
+  breaks a chain (so this one can also be lost when your chain is cut).
+- Largest army: at least 3 knights played.
+- Harbourmaster: at least 3 harbours with one of your settlements or cities on them.
+- Master fisherman: at least 3 of your settlements/cities touching a fishing ground or
+  the lake (a city counts once).
 
 ## Robber (7 or knight)
 

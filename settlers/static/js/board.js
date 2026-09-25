@@ -217,11 +217,12 @@ function edgeBox(board, eid, halfWidth = 6) {
 }
 
 /** Clickable highlights: kind is 'vertex', 'edge' or 'hex'. */
-export function Targets({ board, kind, ids, selected, onPick }) {
+export function Targets({ board, kind, ids, selected, onPick, classFor = null }) {
   if (!ids || !ids.length) return null;
   return html`<g class="targets">
     ${ids.map((id) => {
-      const cls = 'target' + (id === selected ? ' selected' : '');
+      const extra = classFor ? classFor(id) : '';
+      const cls = 'target' + (id === selected ? ' selected' : '') + (extra ? ' ' + extra : '');
       const pick = () => onPick(id);
       if (kind === 'vertex') {
         const [x, y] = vpos(board, id);
