@@ -848,27 +848,93 @@ class Game:
             parts.append("fish " + "+".join(str(t) for t in fish))
         return " and ".join(parts) if parts else "nothing"
 
+    MAX_CONVERSIONS = 20
+
+    def _clean_harbour(self, value) -> dict | None:
+        """Part of a trade where one player ("user") puts cards through the other player's
+        harbours: each conversion turns ``rate`` of ``give`` into 1 of ``get`` at the
+        owner's rate, fixed when the offer is made (rates can only improve later)."""
+        if value is None:
+            return None
+        if not isinstance(value, dict):
+            raise RuleError("Invalid harbour use.")
+        user, conversions = value.get("user"), value.get("conversions")
+        self._require(user in range(len(self.players)), "Invalid harbour use.")
+        self._require(isinstance(conversions, list) and 0 < len(conversions) <= self.MAX_CONVERSIONS,
+                      "Invalid harbour use.")
+        rates = self.trade_rates(1 - user)
+        out = []
+        for c in conversions:
+            self._require(isinstance(c, dict) and c.get("give") in RESOURCES and c.get("get") in RESOURCES
+                          and c["give"] != c["get"], "Invalid harbour use.")
+            out.append({"give": c["give"], "get": c["get"], "rate": rates[c["give"]][c["get"]]})
+        return {"user": user, "conversions": out}
+
+    @staticmethod
+    def _harbour_cards(harbour: dict | None) -> tuple[dict, dict]:
+        """(cards the user puts in, cards the user gets back)."""
+        cards_in, cards_out = _empty_cards(), _empty_cards()
+        for c in (harbour or {}).get("conversions", []):
+            cards_in[c["give"]] += c["rate"]
+            cards_out[c["get"]] += 1
+        return cards_in, cards_out
+
+    def _trade_needs(self, t: dict, q: int) -> tuple[dict, list]:
+        """Cards and fish player q must hand over for trade ``t`` to go through."""
+        cards, fish = (t["give"], t["give_fish"]) if q == t["from"] else (t["get"], t["get_fish"])
+        cards = dict(cards)
+        harbour = t.get("harbour")
+        if harbour and harbour["user"] == q:
+            for r, n in self._harbour_cards(harbour)[0].items():
+                cards[r] += n
+        return cards, fish
+
+    def _describe_harbour(self, harbour: dict) -> str:
+        return ", ".join(f"{c['rate']} {c['give']} → 1 {c['get']}" for c in harbour["conversions"])
+
     def _act_offer_trade(self, p: int, a: dict) -> None:
         self._require_trade_window()
         give, get = _clean_cards(a.get("give", {})), _clean_cards(a.get("get", {}))
         give_fish, get_fish = self._clean_fish(a.get("give_fish")), self._clean_fish(a.get("get_fish"))
-        self._require((_count(give) or give_fish) and (_count(get) or get_fish),
-                      "Both sides of a trade need something.")
-        self._require(self._has_cards(p, give), "You don't have those cards.")
-        self._require(self._has_fish(p, give_fish), "You don't have those fish tokens.")
-        self.trade = {"from": p, "give": give, "get": get, "give_fish": give_fish, "get_fish": get_fish}
-        self._log(f"{self._who(p)} offers {self._describe_side(give, give_fish)} "
-                  f"for {self._describe_side(get, get_fish)}.")
+        harbour = self._clean_harbour(a.get("harbour"))
+        mine = _count(give) or give_fish
+        theirs = _count(get) or get_fish
+        if harbour is None:
+            self._require(mine and theirs, "Both sides of a trade need something.")
+        elif harbour["user"] == p:
+            self._require(mine, "Offer something for the use of their harbours.")
+        else:
+            self._require(theirs, "Ask for something for the use of your harbours.")
+        t = {"from": p, "give": give, "get": get, "give_fish": give_fish, "get_fish": get_fish,
+             "harbour": harbour}
+        cards, fish = self._trade_needs(t, p)
+        self._require(self._has_cards(p, cards), "You don't have those cards.")
+        self._require(self._has_fish(p, fish), "You don't have those fish tokens.")
+        self.trade = t
+        o = 1 - p
+        offered, asked = self._describe_side(give, give_fish), self._describe_side(get, get_fish)
+        if harbour is None:
+            text = f"{self._who(p)} offers {offered} for {asked}"
+        elif harbour["user"] == p:
+            text = (f"{self._who(p)} offers {offered}" + (f" for {asked}" if theirs else "")
+                    + f" to use {self._who(o)}'s harbours: {self._describe_harbour(harbour)}")
+        else:
+            text = (f"{self._who(p)} offers {self._who(o)} the use of their harbours "
+                    f"({self._describe_harbour(harbour)})" + (f" and {offered}" if mine else "")
+                    + f" for {asked}")
+        self._log(text + ".")
 
     def _act_accept_trade(self, p: int, a: dict) -> None:
         t = self.trade
         self._require(t is not None and t["from"] != p, "There's no offer to accept.")
         self._require_trade_window()
         o = t["from"]
-        self._require(self._has_cards(o, t["give"]) and self._has_fish(o, t["give_fish"]),
+        o_cards, o_fish = self._trade_needs(t, o)
+        self._require(self._has_cards(o, o_cards) and self._has_fish(o, o_fish),
                       f"{self._name(o)} no longer has what they offered.")
-        self._require(self._has_cards(p, t["get"]), "You don't have the cards they asked for.")
-        self._require(self._has_fish(p, t["get_fish"]), "You don't have the fish tokens they asked for.")
+        p_cards, p_fish = self._trade_needs(t, p)
+        self._require(self._has_cards(p, p_cards), "You don't have the cards they asked for.")
+        self._require(self._has_fish(p, p_fish), "You don't have the fish tokens they asked for.")
         for r in RESOURCES:
             self.players[o]["hand"][r] += t["get"][r] - t["give"][r]
             self.players[p]["hand"][r] += t["give"][r] - t["get"][r]
@@ -876,8 +942,17 @@ class Game:
         self._take_fish(p, t["get_fish"])
         self.players[p]["fish"] += t["give_fish"]
         self.players[o]["fish"] += t["get_fish"]
+        harbour = t.get("harbour")
+        if harbour:
+            cards_in, cards_out = self._harbour_cards(harbour)
+            hand = self.players[harbour["user"]]["hand"]
+            for r in RESOURCES:
+                hand[r] += cards_out[r] - cards_in[r]
         self.trade = None
         self._log(f"{self._who(p)} accepts the trade.")
+        if harbour:
+            self._log(f"{self._who(harbour['user'])} uses {self._who(1 - harbour['user'])}'s harbours: "
+                      f"{self._describe_harbour(harbour)}.")
 
     def _act_decline_trade(self, p: int, a: dict) -> None:
         self._require(self.trade is not None and self.trade["from"] != p, "There's no offer to decline.")
@@ -1234,6 +1309,7 @@ class Game:
             "costs": COSTS,
             "fish_prices": FISH_PRICES,
             "rates": self.trade_rates(me) if me is not None else {},
+            "opponent_rates": self.trade_rates(1 - me) if me is not None else {},
             "playable_dev": self.playable_dev(me) if me is not None else [],
             "can_pass_boot": self.can_pass_boot(me) if me is not None else False,
             "ship_moved": self.ship_moved,

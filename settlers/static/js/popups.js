@@ -123,31 +123,105 @@ function indicesFor(fish, wanted) {
   return used;
 }
 
+/** Cards going in and coming out of a list of harbour conversions. */
+function harbourCards(conversions, rateOf) {
+  const cardsIn = emptyCards();
+  const cardsOut = emptyCards();
+  for (const c of conversions) {
+    cardsIn[c.give] += rateOf(c);
+    cardsOut[c.get] += 1;
+  }
+  return [cardsIn, cardsOut];
+}
+
+const minus = (a, b) => Object.fromEntries(RESOURCES.map((r) => [r, a[r] - b[r]]));
+
+/** Build conversions through the opponent's harbours, one card at a time. */
+function HarbourBuilder({ game, me, available, conversions, setConversions }) {
+  const [give, setGive] = useState(null);
+  const rates = game.opponent_rates;
+  const add = (get) => setConversions([...conversions, { give, get }]);
+  return html`<div class="harbour-builder">
+    <div class="trade-label">Put in</div>
+    <div class="select-row">
+      ${RESOURCES.map((r) => html`<button key=${r} class=${'card-btn pick' + (give === r ? ' on' : '')}
+        onClick=${() => setGive(r)}><${ResCard} res=${r} count=${available[r]} dim=${available[r] === 0} /></button>`)}
+    </div>
+    <div class="trade-label">Get back ${give ? '(click to add)' : ''}</div>
+    <div class="select-row">
+      ${RESOURCES.map((r) => {
+        const rate = give && r !== give ? rates[give][r] : null;
+        return html`<div key=${r} class="select-card">
+          <button class="card-btn" disabled=${!rate || available[give] < rate} onClick=${() => add(r)}>
+            <${ResCard} res=${r} badge=${false} dim=${!rate} /></button>
+          <span class="rate">${rate ? `${rate}:1` : ''}</span>
+        </div>`;
+      })}
+    </div>
+  </div>`;
+}
+
+function ConversionList({ conversions, rateOf, onRemove }) {
+  return html`<div class="conversions">
+    ${conversions.map((c, i) => html`<span key=${i} class="conversion">
+      ${rateOf(c)} ${c.give} → 1 ${c.get}
+      ${onRemove && html`<button class="small" title="Remove" onClick=${() => onRemove(i)}>×</button>`}
+    </span>`)}
+  </div>`;
+}
+
 function PlayerTrade({ game, me, initial, send, onClose }) {
   const mine = game.players[me];
+  const opp = 1 - me;
   const [give, setGive] = useState(initial ? { ...initial.get } : emptyCards());
   const [get, setGet] = useState(initial ? { ...initial.give } : emptyCards());
   const [giveFish, setGiveFish] = useState(initial ? indicesFor(mine.fish, initial.get_fish) : []);
   const [getFish, setGetFish] = useState(fishCounts(initial ? initial.give_fish : []));
+  // Harbour use carried over from an offer being countered, or built here (you use theirs).
+  const carried = initial && initial.harbour;
+  const harbourUser = carried ? carried.user : me;
+  const [conversions, setConversions] = useState(carried ? carried.conversions.map(({ give: g, get: t }) => ({ give: g, get: t })) : []);
+  const [showHarbour, setShowHarbour] = useState(Boolean(carried));
+  const rateOf = (c) => (harbourUser === me ? game.opponent_rates : game.rates)[c.give][c.get];
+  const [cardsIn] = harbourCards(harbourUser === me ? conversions : [], rateOf);
+  const forFee = minus(mine.hand, cardsIn);
+  const forHarbour = minus(mine.hand, give);
+
   const giveOk = total(give) > 0 || giveFish.length > 0;
   const getOk = total(get) > 0 || fishList(getFish).length > 0;
+  const usingHarbour = conversions.length > 0;
+  const ok = !usingHarbour ? giveOk && getOk : harbourUser === me ? giveOk : getOk;
   const offer = () => send({
     type: 'offer_trade', give, get,
     give_fish: giveFish.map((i) => mine.fish[i]), get_fish: fishList(getFish),
-  }).then((ok) => ok && onClose());
+    harbour: usingHarbour ? { user: harbourUser, conversions } : null,
+  }).then((done) => done && onClose());
   return html`<div class="trade">
     <div class="trade-side">
-      <div class="trade-label">You give</div>
-      <${CardPicker} value=${give} onChange=${setGive} available=${mine.hand} />
+      <div class="trade-label">You give ${game.names[opp]}</div>
+      <${CardPicker} value=${give} onChange=${setGive} available=${forFee} />
       <${FishChooser} fish=${mine.fish} chosen=${giveFish} onChange=${setGiveFish} />
     </div>
     <div class="trade-side">
-      <div class="trade-label">You want from ${game.names[1 - me]}</div>
+      <div class="trade-label">You want from ${game.names[opp]}</div>
       <${CardPicker} value=${get} onChange=${setGet} />
       <${FishRequest} value=${getFish} onChange=${setGetFish} />
     </div>
+    <div class="trade-side">
+      ${harbourUser === me
+        ? html`<button class="link-btn" onClick=${() => setShowHarbour(!showHarbour)}>
+            ${showHarbour ? '▾' : '▸'} Use ${game.names[opp]}'s harbours</button>
+          ${showHarbour && html`<${HarbourBuilder} game=${game} me=${me} available=${minus(forHarbour, cardsIn)}
+            conversions=${conversions} setConversions=${setConversions} />`}
+          <${ConversionList} conversions=${conversions} rateOf=${rateOf}
+            onRemove=${(i) => setConversions(conversions.filter((_, j) => j !== i))} />`
+        : html`<div class="trade-label">${game.names[opp]} puts through your harbours</div>
+          <${ConversionList} conversions=${conversions} rateOf=${rateOf} />`}
+    </div>
     <div class="popup-actions">
-      <button class="primary" disabled=${!giveOk || !getOk} onClick=${offer}>Offer to ${game.names[1 - me]}</button>
+      ${usingHarbour && !ok && html`<span class="muted">${harbourUser === me
+        ? 'Offer something for the use of their harbours.' : 'Ask for something for the use of your harbours.'}</span>`}
+      <button class="primary" disabled=${!ok} onClick=${offer}>Offer to ${game.names[opp]}</button>
     </div>
   </div>`;
 }
@@ -205,16 +279,31 @@ function Side({ cards, fish }) {
   </span>`;
 }
 
+function HarbourPart({ game, me, harbour }) {
+  if (!harbour) return null;
+  const who = harbour.user === me ? 'You put' : `${game.names[harbour.user]} puts`;
+  const whose = harbour.user === me ? `${game.names[1 - me]}'s` : 'your';
+  return html`<div class="offer-row"><span class="trade-label">Harbours</span>
+    <span>${who} through ${whose} harbours:
+      <${ConversionList} conversions=${harbour.conversions} rateOf=${(c) => c.rate} /></span>
+  </div>`;
+}
+
 export function OfferPopup({ game, me, send, onCounter }) {
   const t = game.trade;
   const mine = game.players[me];
-  const haveCards = RESOURCES.every((r) => mine.hand[r] >= t.get[r]);
+  const needCards = { ...t.get };
+  if (t.harbour && t.harbour.user === me) {
+    for (const c of t.harbour.conversions) needCards[c.give] += c.rate;
+  }
+  const haveCards = RESOURCES.every((r) => mine.hand[r] >= needCards[r]);
   const counts = fishCounts(mine.fish);
   const need = fishCounts(t.get_fish);
   const haveFish = [1, 2, 3].every((v) => counts[v] >= need[v]);
   return html`<${Popup} title=${`${game.names[t.from]} offers a trade`}>
     <div class="offer-row"><span class="trade-label">You get</span><${Side} cards=${t.give} fish=${t.give_fish} /></div>
     <div class="offer-row"><span class="trade-label">You give</span><${Side} cards=${t.get} fish=${t.get_fish} /></div>
+    <${HarbourPart} game=${game} me=${me} harbour=${t.harbour} />
     ${!(haveCards && haveFish) && html`<div class="muted">You don't have what they're asking for.</div>`}
     <div class="popup-actions">
       <button onClick=${() => send({ type: 'decline_trade' })}>Decline</button>
@@ -224,11 +313,12 @@ export function OfferPopup({ game, me, send, onCounter }) {
   <//>`;
 }
 
-export function MyOfferPopup({ game, send }) {
+export function MyOfferPopup({ game, me, send }) {
   const t = game.trade;
   return html`<${Popup} title=${`Waiting for ${game.names[1 - t.from]}…`}>
     <div class="offer-row"><span class="trade-label">You give</span><${Side} cards=${t.give} fish=${t.give_fish} /></div>
     <div class="offer-row"><span class="trade-label">You get</span><${Side} cards=${t.get} fish=${t.get_fish} /></div>
+    <${HarbourPart} game=${game} me=${me} harbour=${t.harbour} />
     <div class="popup-actions"><button onClick=${() => send({ type: 'cancel_trade' })}>Withdraw offer</button></div>
   <//>`;
 }

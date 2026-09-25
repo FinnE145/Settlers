@@ -482,3 +482,64 @@ def test_old_saves_get_the_new_titles_on_load():
     del data["harbourmaster"], data["master_fisherman"], data["names"]
     again = Game.from_dict(data)
     assert again.harbourmaster == 1 and again.names == ["Red", "Blue"]
+
+
+# ------------------------------------------------- using someone's harbour
+
+
+def harbour_rental_game():
+    board, spots = harbour_board()  # spots: wood 2:1, brick 2:1, 3:1, ore 2:1
+    game = main_phase(make_game(board), p=1)  # blue's turn: red trades on the other turn
+    place(game, 1, spots[0])  # blue has the wood 2:1 harbour
+    give(game, 0, wood=4, sheep=1)
+    return game
+
+
+def test_put_cards_through_the_other_players_harbour():
+    game = harbour_rental_game()
+    offer = {"give": {"sheep": 1}, "get": {},
+             "harbour": {"user": 0, "conversions": [{"give": "wood", "get": "ore"}, {"give": "wood", "get": "ore"}]}}
+    act(game, 0, "offer_trade", **offer)
+    assert [c["rate"] for c in game.trade["harbour"]["conversions"]] == [2, 2]
+    act(game, 1, "accept_trade")
+    assert game.players[0]["hand"] == {"wood": 0, "brick": 0, "sheep": 0, "wheat": 0, "ore": 2}
+    assert game.players[1]["hand"]["sheep"] == 1
+    assert "harbours" in game.log[-1]["text"]
+
+
+def test_harbour_use_needs_a_fee_and_the_cards():
+    game = harbour_rental_game()
+    use = {"user": 0, "conversions": [{"give": "wood", "get": "ore"}]}
+    with pytest.raises(RuleError):
+        act(game, 0, "offer_trade", give={}, get={}, harbour=use)  # nothing for the owner
+    too_much = {"user": 0, "conversions": [{"give": "wood", "get": "ore"}] * 3}  # needs 6 wood
+    with pytest.raises(RuleError):
+        act(game, 0, "offer_trade", give={"sheep": 1}, get={}, harbour=too_much)
+    with pytest.raises(RuleError):
+        act(game, 0, "offer_trade", give={"sheep": 1}, get={},
+            harbour={"user": 0, "conversions": [{"give": "wood", "get": "wood"}]})
+    # The fee counts against the same hand as the harbour cards.
+    with pytest.raises(RuleError):
+        act(game, 0, "offer_trade", give={"wood": 1}, get={},
+            harbour={"user": 0, "conversions": [{"give": "wood", "get": "ore"}] * 2})
+
+
+def test_owner_can_counter_on_the_fee():
+    game = harbour_rental_game()
+    use = {"user": 0, "conversions": [{"give": "wood", "get": "ore"}]}
+    act(game, 0, "offer_trade", give={"sheep": 1}, get={}, harbour=use)
+    # Blue counters: same harbour use by red, but wants 2 wood as the fee instead.
+    act(game, 1, "offer_trade", give={}, get={"wood": 2}, harbour=use)
+    assert game.trade["from"] == 1 and game.trade["harbour"]["user"] == 0
+    act(game, 0, "accept_trade")
+    assert game.players[0]["hand"]["wood"] == 0 and game.players[0]["hand"]["ore"] == 1
+    assert game.players[1]["hand"]["wood"] == 2
+
+
+def test_accept_checks_the_users_harbour_cards():
+    game = harbour_rental_game()
+    use = {"user": 0, "conversions": [{"give": "wood", "get": "ore"}]}
+    act(game, 1, "offer_trade", give={}, get={"sheep": 1}, harbour=use)
+    game.players[0]["hand"]["wood"] = 1  # red spent wood meanwhile
+    with pytest.raises(RuleError):
+        act(game, 0, "accept_trade")

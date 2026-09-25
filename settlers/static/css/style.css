@@ -365,3 +365,10 @@ button.close { border: 0; background: none; font-size: 1.4em; line-height: 1; pa
 .name-field input { font: inherit; padding: 3px 6px; width: 9em; }
 .actions { flex-wrap: wrap; align-items: center; }
 .setup .board-wrap svg.board { max-height: calc(100vh - 150px); width: auto; max-width: 100%; margin: 0 auto; }
+.harbour-builder { margin-top: 4px; }
+.conversions { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.conversion {
+  display: inline-flex; align-items: center; gap: 4px; background: #e6f1fb;
+  border: 1px solid #9fc3e6; border-radius: 10px; padding: 1px 4px 1px 8px; font-size: 0.9em;
+}
+button.link-btn { border: 0; background: none; padding: 0; font-weight: 700; color: #2e5e8e; }

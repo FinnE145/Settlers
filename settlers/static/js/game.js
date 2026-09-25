@@ -286,7 +286,7 @@ export function GameScreen({ session, onError }) {
     popup = html`<${TradePopup} key=${game.trade ? 'counter' : 'new'} game=${game} me=${me}
       initial=${panel.initial} send=${send} onClose=${close} />`;
   } else if (game.trade && game.trade.from === me && tradeWindow) {
-    popup = html`<${MyOfferPopup} game=${game} send=${send} />`;
+    popup = html`<${MyOfferPopup} game=${game} me=${me} send=${send} />`;
   } else if (panel?.kind === 'fish') {
     popup = html`<${FishPopup} game=${game} me=${me} send=${send} onClose=${close} />`;
   } else if (panel?.kind === 'deposit') {
