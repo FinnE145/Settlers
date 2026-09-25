@@ -1,6 +1,6 @@
 // The in-game screen: opponent bar, board, your bar, side panel and pop-ups.
 import { h } from 'preact';
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import htm from 'htm';
 import { Board, Pieces, Targets } from './board.js';
 import { api } from './api.js';
@@ -90,6 +90,75 @@ function Log({ entries, names }) {
 
 // ---------------------------------------------------------------- screen
 
+const OFFSET_KEY = 'settlers-popup-offset';
+
+function loadOffset() {
+  try {
+    const o = JSON.parse(localStorage.getItem(OFFSET_KEY));
+    if (o && Number.isFinite(o.x) && Number.isFinite(o.y)) return o;
+  } catch { /* ignore */ }
+  return { x: 0, y: 0 };
+}
+
+function saveOffset(o) {
+  try { localStorage.setItem(OFFSET_KEY, JSON.stringify(o)); } catch { /* ignore */ }
+}
+
+const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+
+/** Pop-ups can be dragged by their title bar; where you leave them is where the next
+ * ones open. Double-clicking the title bar puts them back at the bottom middle. They are
+ * always kept fully on the board. */
+function usePopupDrag() {
+  const [offset, setOffset] = useState(loadOffset);
+  const anchor = useRef(null);
+  const current = useRef(offset);
+  current.current = offset;
+
+  // A saved spot may not fit a bigger pop-up or a smaller window: nudge it back inside.
+  useLayoutEffect(() => {
+    const el = anchor.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const a = el.parentElement.getBoundingClientRect();
+    let dx = 0;
+    let dy = 0;
+    if (r.width <= a.width) dx = r.left < a.left ? a.left - r.left : r.right > a.right ? a.right - r.right : 0;
+    if (r.height <= a.height) dy = r.top < a.top ? a.top - r.top : r.bottom > a.bottom ? a.bottom - r.bottom : 0;
+    if (dx || dy) setOffset((o) => ({ x: o.x + dx, y: o.y + dy }));
+  });
+
+  const onPointerDown = (e) => {
+    if (e.button !== 0 || !e.target.closest('.popup-head') || e.target.closest('button')) return;
+    e.preventDefault();
+    const start = {
+      x: e.clientX, y: e.clientY, from: current.current,
+      rect: anchor.current.getBoundingClientRect(), area: anchor.current.parentElement.getBoundingClientRect(),
+    };
+    const move = (ev) => {
+      const dx = clamp(ev.clientX - start.x, start.area.left - start.rect.left, start.area.right - start.rect.right);
+      const dy = clamp(ev.clientY - start.y, start.area.top - start.rect.top, start.area.bottom - start.rect.bottom);
+      setOffset({ x: start.from.x + dx, y: start.from.y + dy });
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+      saveOffset(current.current);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+  };
+  const onDblClick = (e) => {
+    if (!e.target.closest('.popup-head') || e.target.closest('button')) return;
+    setOffset({ x: 0, y: 0 });
+    saveOffset({ x: 0, y: 0 });
+  };
+  const style = { transform: `translate(calc(-50% + ${offset.x}px), ${offset.y}px)` };
+  return { ref: anchor, style, onPointerDown, onDblClick };
+}
+
 export function GameScreen({ session, onError }) {
   const { board, game, seat: me } = session;
   const [mode, setMode] = useState(null);
@@ -162,6 +231,7 @@ export function GameScreen({ session, onError }) {
   };
   const chooseMode = (m) => { setMode(m); setRobberHex(null); setShipFrom(null); };
   const close = () => setPanel(null);
+  const popupDrag = usePopupDrag();
 
   const playDev = (card) => {
     if (card === 'year_of_plenty') setPanel({ kind: 'yop' });
@@ -242,7 +312,7 @@ export function GameScreen({ session, onError }) {
           selected=${active === 'move_ship' ? shipFrom : robberHex} onPick=${onPick}
           classFor=${active === 'route' ? (id) => (roadSpots.has(id) ? (shipSpots.has(id) ? 'either' : '') : 'only-ship') : null} />`}
       <//>
-      ${popup && html`<div class="popup-anchor">${popup}</div>`}
+      ${popup && html`<div class="popup-anchor" ...${popupDrag}>${popup}</div>`}
     </section>
     <${PlayerBar} game=${game} p=${me} onPlayDev=${playDev}
       onBank=${() => setPanel({ kind: 'deposit' })} onFish=${() => setPanel({ kind: 'fish' })}
