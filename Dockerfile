@@ -22,4 +22,5 @@ EXPOSE 8000
 
 # One worker: the game lives in that process. Threads serve the live-update sockets.
 CMD ["gunicorn", "--worker-class", "gthread", "--workers", "1", "--threads", "32", \
-     "--bind", "0.0.0.0:8000", "--access-logfile", "-", "settlers.app:create_app()"]
+     "--bind", "0.0.0.0:8000", "--access-logfile", "-", "--no-control-socket", \
+     "settlers.app:create_app()"]
