@@ -1,7 +1,7 @@
 # fe-pro deployment (see /srv/fe-pro/SERVER.md). Run from /srv/stacks/settlers/repo/deploy:
 #   docker compose up -d --build
 # The root docker-compose.yml is the generic version; this one follows the server's
-# stack convention: state in /srv/stacks/settlers/data, published on the tailnet only.
+# stack convention: state in /srv/stacks/settlers/data, published on the tailnet IP and loopback.
 # The project name. Without it Compose names the project after the directory, "deploy", which symr's and settlers'
 # deploy directories share, so each saw the other's container as an orphan (and --remove-orphans would delete it).
 name: settlers
@@ -15,8 +15,24 @@ services:
     user: "2003:2003"
     volumes:
       - /srv/stacks/settlers/data:/data
+    environment:
+      # The image's list plus this network's gateway, which is where Docker's loopback publish below makes every
+      # connection appear to come from (so Caddy's requests get in). Anything on fe-pro itself can therefore reach
+      # the app through 127.0.0.1, as with symr; outside the box, Tailscale is still the only way in.
+      SETTLERS_ALLOWED_NETWORKS: "100.64.0.0/10,fd7a:115c:a1e0::/48,127.0.0.0/8,::1/128,172.31.69.1/32"
     ports:
-      # Tailnet interface only -- never 0.0.0.0. The app has no accounts; Tailscale is the
-      # boundary (the app's own address check is a second layer, not the only one).
+      # Never 0.0.0.0. The app has no accounts; Tailscale is the boundary (the app's own address check is a
+      # second layer, not the only one).
+      # Loopback, for Caddy (settlers.fmje.dev). It exists at boot, so this one always binds.
+      - "127.0.0.1:45670:8000"
+      # The tailnet IP, for direct access (fe-pro.tail78f5ec.ts.net:45670). If tailscale0 has no address yet when
+      # Docker starts the container, this binding is silently lost until the container is recreated (SERVER.md).
       - "100.64.132.111:45670:8000"
     restart: unless-stopped
+
+networks:
+  default:
+    ipam:
+      config:
+        # pinned, so the gateway in SETTLERS_ALLOWED_NETWORKS is always 172.31.69.1
+        - subnet: 172.31.69.0/24
